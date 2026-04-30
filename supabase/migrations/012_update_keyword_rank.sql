@@ -1,0 +1,16 @@
+ALTER TABLE scale_insights_keyword_rank
+ADD COLUMN IF NOT EXISTS sku text,
+ADD COLUMN IF NOT EXISTS tracked boolean,
+ADD COLUMN IF NOT EXISTS period_sales decimal(14,2),
+ADD COLUMN IF NOT EXISTS period_acos decimal(10,4),
+ADD COLUMN IF NOT EXISTS period_conversion decimal(10,4),
+ADD COLUMN IF NOT EXISTS period_spent decimal(14,2),
+ADD COLUMN IF NOT EXISTS period_orders integer,
+ADD COLUMN IF NOT EXISTS period_units integer,
+ADD COLUMN IF NOT EXISTS period_clicks integer,
+ADD COLUMN IF NOT EXISTS query_volume integer,
+ADD COLUMN IF NOT EXISTS conversion_delta decimal(10,4),
+ADD COLUMN IF NOT EXISTS market_conversion decimal(10,4),
+ADD COLUMN IF NOT EXISTS asin_conversion decimal(10,4),
+ADD COLUMN IF NOT EXISTS purchase_share decimal(10,4),
+ADD COLUMN IF NOT EXISTS rank_value integer;
