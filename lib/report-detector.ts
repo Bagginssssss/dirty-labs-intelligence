@@ -28,22 +28,25 @@ function lacks(normHeaders: string[], ...substrings: string[]): boolean {
 // ORDER IS SIGNIFICANT — first match wins.
 // Rule: most-specific (fewest possible false positives) → least-specific.
 //
-//  1. sb_search_term (hint SB) — customer_search_term + viewable_impressions + cost_type
+//  1. search_query_performance — unique triple: search_query_score + impressions_total_count
+//                                + purchases_brand_count
+//  2. virtual_bundle_sales     — unique triple: bundle_asin + bundles_sold + total_sales
+//  3. sb_search_term (hint SB) — customer_search_term + viewable_impressions + cost_type
 //                                MUST precede generic SP check; SB files have all three.
-//  2. sp_search_term_report    — unique column "customer_search_term"
-//  3. sp_targeting_report      — unique column "top_of_search_impression_share"
+//  4. sp_search_term_report    — unique column "customer_search_term"
+//  5. sp_targeting_report      — unique column "top_of_search_impression_share"
 //                                MUST precede smartscout_share_of_voice because
 //                                "impression_share" is a substring of
 //                                "top_of_search_impression_share".
-//  4. purchased_product_report — unique column "purchased_asin"
-//  5. scale_insights_bid_log   — unique columns "bid_before" / "bid_after"
-//  6. scale_insights_kw_rank   — unique column "organic_rank"
-//  7. subscribe_and_save       — unique column "active_subscriptions"
-//  8. smartscout_brand_revenue — unique column "competitor_brand"
-//  9. business_report          — "sessions" + "buy_box"/"page_views" (fairly unique)
-// 10. smartscout_share_of_voice— "impression_share"/"click_share" with guards
+//  6. purchased_product_report — unique column "purchased_asin"
+//  7. scale_insights_bid_log   — unique columns "bid_before" / "bid_after"
+//  8. scale_insights_kw_rank   — unique column "organic_rank"
+//  9. subscribe_and_save       — unique column "active_subscriptions"
+// 10. smartscout_brand_revenue — unique column "competitor_brand"
+// 11. business_report          — "sessions" + "buy_box"/"page_views" (fairly unique)
+// 12. smartscout_share_of_voice— "impression_share"/"click_share" with guards
 //                                (lacks targeting/match_type to exclude targeting reports)
-// 11. sp_campaign_performance  — most generic; last resort for Amazon campaign CSV
+// 13. sp_campaign_performance  — most generic; last resort for Amazon campaign CSV
 
 const SIGNATURES: Array<{
   reportType: string
@@ -62,6 +65,16 @@ const SIGNATURES: Array<{
       has(h, 'search_query_score') &&
       has(h, 'impressions_total_count') &&
       has(h, 'purchases_brand_count'),
+  },
+  {
+    // Amazon Virtual Bundle Sales report.
+    // BUNDLE_ASIN, BUNDLES_SOLD, and TOTAL_SALES are unique to this export.
+    reportType: 'virtual_bundle_sales',
+    tableName:  'virtual_bundle_sales',
+    match: h =>
+      has(h, 'bundle_asin') &&
+      has(h, 'bundles_sold') &&
+      has(h, 'total_sales'),
   },
   {
     // SB Search Term Report shares the same table as SP.
@@ -218,6 +231,11 @@ const SIGNATURES: Array<{
 
 export function detectReportType(headers: string[]): DetectionResult {
   const normHeaders = headers.map(normalize)
+
+  console.log('[detector] normalized headers:', JSON.stringify(normHeaders.slice(0, 10)))
+  console.log('[detector] has bundle_asin:', normHeaders.some(x => x.includes('bundle_asin')))
+  console.log('[detector] has bundles_sold:', normHeaders.some(x => x.includes('bundles_sold')))
+  console.log('[detector] has total_sales:', normHeaders.some(x => x.includes('total_sales')))
 
   for (const sig of SIGNATURES) {
     if (sig.match(normHeaders)) {

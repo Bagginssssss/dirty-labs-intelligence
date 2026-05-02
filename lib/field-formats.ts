@@ -313,6 +313,12 @@ export const FIELD_FORMATS: Record<string, FieldFormat> = {
   date_range_end:          'date',
   snapshot_date:           'date',
   date_first_available:    'date',
+  sale_date:               'date',
+  report_week:             'date',
+  bundle_asin:             'text',
+  bundles_sold:            'integer',
+  total_sales_usd:         'currency_usd',
+  is_virtual_multipack:    'text',
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
