@@ -232,11 +232,6 @@ const SIGNATURES: Array<{
 export function detectReportType(headers: string[]): DetectionResult {
   const normHeaders = headers.map(normalize)
 
-  console.log('[detector] normalized headers:', JSON.stringify(normHeaders.slice(0, 10)))
-  console.log('[detector] has bundle_asin:', normHeaders.some(x => x.includes('bundle_asin')))
-  console.log('[detector] has bundles_sold:', normHeaders.some(x => x.includes('bundles_sold')))
-  console.log('[detector] has total_sales:', normHeaders.some(x => x.includes('total_sales')))
-
   for (const sig of SIGNATURES) {
     if (sig.match(normHeaders)) {
       return { reportType: sig.reportType, tableName: sig.tableName, hint: sig.hint }
