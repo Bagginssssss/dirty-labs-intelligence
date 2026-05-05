@@ -112,7 +112,7 @@ export type PPCStatRow = {
   tone?: 'neutral' | 'positive' | 'warning' | 'critical';
 };
 
-export type CampaignStatus = 'top' | 'watching' | 'waste' | 'sbv' | 'new';
+export type CampaignStatus = 'top' | 'watching' | 'waste' | 'new';
 
 export type CampaignRow = {
   id: string;

@@ -11,8 +11,7 @@ const STATUS: Record<CampaignStatus, { text: string; tone: string }> = {
   top:      { text: '✓ top',    tone: 'text-[#10b981]' },
   watching: { text: 'watch',    tone: 'text-[#f59e0b]' },
   waste:    { text: '⚠',        tone: 'text-[#ef4444]' },
-  sbv:      { text: 'SBV',      tone: 'text-[#3b82f6]' },
-  new:      { text: 'NEW',      tone: 'text-[#475569]' },
+  new:      { text: 'warming',  tone: 'text-[#475569]' },
 };
 
 function roasTone(r: number | null): string {

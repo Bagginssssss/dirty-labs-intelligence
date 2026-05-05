@@ -528,14 +528,13 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   }
 
   function toStatus(
-    adType: 'SP' | 'SB' | 'SBV',
     roas: number | null,
     spend: number,
+    impressions: number,
     campaignId: string,
   ): CampaignRow['status'] {
-    if (adType === 'SBV') return 'sbv';
     const createdAt = createdAtMap.get(campaignId);
-    if (createdAt && createdAt > cutoff14d) return 'new';
+    if (createdAt && createdAt > cutoff14d && impressions < 100) return 'new';
     if (roas !== null && roas >= 5) return 'top';
     if (roas !== null && roas < 2 && spend > 50) return 'waste';
     return 'watching';
@@ -553,7 +552,7 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
         roas:        c.roas,
         orders:      c.orders,
         impressions: c.impressions,
-        status:      toStatus(adType, c.roas, c.spend, c.campaign_uuid),
+        status:      toStatus(c.roas, c.spend, c.impressions, c.campaign_uuid),
       };
     })
     .sort((a, b) => b.spend - a.spend)
