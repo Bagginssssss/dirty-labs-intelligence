@@ -459,6 +459,7 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
     scProductsRes,
     scBrandsRes,
     asinPerf,
+    priorAsinPerf,
     ssCurrentRes,
     ssPriorRes,
     bundleCurrentRes,
@@ -486,8 +487,9 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
       .order('snapshot_date', { ascending: false })
       .limit(200),
 
-    // 5C: CVR/Buy Box via existing helper
+    // 5C: CVR/Buy Box — current and prior period (same-length window)
     getASINPerformance(BRAND_ID, startDate, endDate),
+    getASINPerformance(BRAND_ID, priorMonthStart, priorMonthEnd),
 
     // 5D: S&S current month
     supabaseAdmin
@@ -654,17 +656,29 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
   // ── 5C: CVR / Buy Box ───────────────────────────────────────────────────────
   const knownPerf = asinPerf.filter(r => r.asin in ASIN_NAMES).slice(0, 6);
 
+  // Prior-period CVR map (ASIN → cvr) for period-over-period comparison
+  const priorCvrMap = new Map<string, number>();
+  for (const r of priorAsinPerf) {
+    if ((r.asin in ASIN_NAMES) && r.cvr !== null) priorCvrMap.set(r.asin, r.cvr);
+  }
+
+  // Brand avg CVR (fallback when no prior-period data for an ASIN)
   const brandTotalSessions = knownPerf.reduce((s, r) => s + r.sessions, 0);
   const brandTotalOrders   = knownPerf.reduce((s, r) => s + r.units_ordered, 0);
   const brandAvgCvr        = brandTotalSessions > 0 ? brandTotalOrders / brandTotalSessions : null;
 
   const cvrBuyBox: CVRBuyBoxRow[] = knownPerf.map(r => {
     const cvr = r.cvr ?? 0;
-    const cvrTrend: CVRBuyBoxRow['cvrTrend'] =
-      brandAvgCvr === null || brandAvgCvr === 0 ? 'average'
-      : cvr > brandAvgCvr * 1.2 ? 'above'
-      : cvr < brandAvgCvr * 0.8 ? 'below'
-      : 'average';
+    let cvrTrend: CVRBuyBoxRow['cvrTrend'] = 'average';
+    const priorCvr = priorCvrMap.get(r.asin);
+    if (priorCvr != null && priorCvr > 0) {
+      // Period-over-period: ±5% threshold
+      const delta = (cvr - priorCvr) / priorCvr;
+      cvrTrend = delta > 0.05 ? 'above' : delta < -0.05 ? 'below' : 'average';
+    } else if (brandAvgCvr !== null && brandAvgCvr > 0) {
+      // Fallback: compare to brand average for the period
+      cvrTrend = cvr > brandAvgCvr * 1.2 ? 'above' : cvr < brandAvgCvr * 0.8 ? 'below' : 'average';
+    }
     // buy_box_pct stored as percentage (99.18), component expects decimal (0..1)
     return { asinShortName: shortName(r.asin), asin: r.asin, cvr, cvrTrend, buyBox: (r.buy_box_pct ?? 0) / 100 };
   });
