@@ -789,17 +789,19 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   const year = endDate.getUTCFullYear();
   const monthIndex = endDate.getUTCMonth() as MonthIndex;
 
-  // 14-day cutoff for 'new' campaign status (compare against campaign created_at)
-  const cutoff14d = new Date(endDate.getTime() - 14 * 86_400_000).toISOString();
+  // INB-31 stopgap: campaigns.created_at is ingestion date, not Amazon launch date.
+  // Using MIN(report_date) from sp_campaign_performance as launch proxy.
+  const cutoff14dDate = new Date(endDate.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
 
-  const [byType, harvest, acct, metaRes] = await Promise.all([
+  const [byType, harvest, acct, firstSeenRes] = await Promise.all([
     getCampaignsByAdType(BRAND_ID, period.start, period.end),
     getHarvestCandidates(BRAND_ID, period.start, period.end),
     getAccountSummary(BRAND_ID, period.start, period.end),
     supabaseAdmin
-      .from('campaigns')
-      .select('id, created_at')
-      .eq('brand_id', BRAND_ID),
+      .from('sp_campaign_performance')
+      .select('campaign_id, report_date')
+      .eq('brand_id', BRAND_ID)
+      .order('report_date', { ascending: true }),
   ]);
 
   const spRows  = byType['SP']  ?? [];
@@ -901,10 +903,13 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   ];
 
   // Watchlist — map queries.CampaignRow → dashboard CampaignRow
-  const createdAtMap = new Map<string, string>();
-  if (!metaRes.error && metaRes.data) {
-    for (const c of metaRes.data) {
-      if (c.created_at) createdAtMap.set(c.id, c.created_at as string);
+  // Build first_seen_date map: earliest report_date per campaign_id (INB-31 stopgap)
+  const firstSeenMap = new Map<string, string>();
+  if (!firstSeenRes.error && firstSeenRes.data) {
+    for (const r of firstSeenRes.data) {
+      const cid = r.campaign_id as string;
+      const rd  = r.report_date as string;
+      if (!firstSeenMap.has(cid)) firstSeenMap.set(cid, rd);
     }
   }
 
@@ -920,8 +925,8 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
     impressions: number,
     campaignId: string,
   ): CampaignRow['status'] {
-    const createdAt = createdAtMap.get(campaignId);
-    if (createdAt && createdAt > cutoff14d && impressions < 100) return 'new';
+    const firstSeen = firstSeenMap.get(campaignId);
+    if (firstSeen && firstSeen >= cutoff14dDate && impressions < 100) return 'new';
     if (roas !== null && roas >= 5) return 'top';
     if (roas !== null && roas < 2 && spend > 50) return 'waste';
     return 'watching';
@@ -995,7 +1000,7 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
       .gte('report_date', period.start)
       .lte('report_date', period.end)
       .gt('purchases_total', 100)
-      .gt('purchases_brand', 0)
+      .gte('purchases_brand', 10)
       .lt('purchases_brand_share', 10)
       .not('search_query', 'ilike', '%dirty%')
       .order('purchases_total', { ascending: false, nullsFirst: false })
