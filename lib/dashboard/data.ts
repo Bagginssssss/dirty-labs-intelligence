@@ -72,7 +72,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
 
   // Business report: correct AOV denominator is total_order_items (not total_orders)
   const { data: brRows } = await supabaseAdmin
-    .from('business_report')
+    .from('business_report_daily')
     .select('ordered_product_sales, total_order_items, report_date')
     .eq('brand_id', BRAND_ID)
     .gte('report_date', monthStart)
@@ -612,7 +612,7 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
 
     // 5E: Business report total for 90-day (shareOfTotal denominator)
     supabaseAdmin
-      .from('business_report')
+      .from('business_report_daily')
       .select('ordered_product_sales')
       .eq('brand_id', BRAND_ID)
       .gte('report_date', bundleStartStr)
@@ -620,7 +620,7 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
 
     // 5E: Business report prior 90-day (shareOfTotalChange denominator)
     supabaseAdmin
-      .from('business_report')
+      .from('business_report_daily')
       .select('ordered_product_sales')
       .eq('brand_id', BRAND_ID)
       .gte('report_date', prior90StartStr)

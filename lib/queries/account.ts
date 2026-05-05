@@ -17,7 +17,7 @@ export async function getAccountSummary(
       .lte('metric_date', endDate)
       .order('metric_date'),
     supabaseAdmin
-      .from('business_report')
+      .from('business_report_daily')
       .select('ordered_product_sales, total_order_items')
       .eq('brand_id', brandId)
       .gte('report_date', startDate)

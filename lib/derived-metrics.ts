@@ -62,7 +62,7 @@ export async function calculateDerivedMetrics(
       .eq('brand_id', brandId)
       .eq('report_date', date),
     supabaseAdmin
-      .from('business_report')
+      .from('business_report_daily')
       .select('ordered_product_sales, units_ordered, sessions_total, total_order_items')
       .eq('brand_id', brandId)
       .eq('report_date', date),
