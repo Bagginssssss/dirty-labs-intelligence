@@ -16,6 +16,7 @@ import type {
   CVRBuyBoxRow,
   DashboardData,
   DashboardPeriod,
+  Domain,
   GoalCard,
   IngestStatus,
   MarketShareView,
@@ -23,6 +24,7 @@ import type {
   PPCStatRow,
   RankMover,
   SearchIntelData,
+  Severity,
   SQPRow,
   SSCards,
   SubcategoryRankRow,
@@ -36,6 +38,8 @@ import { fmtUSDCompact, fmtUSD, fmtRoas, fmtIntCompact, fmtPct, fmtPctSigned } f
 import { getAccountSummary } from '@/lib/queries/account';
 import { getCampaignsByAdType } from '@/lib/queries/campaigns';
 import { getHarvestCandidates } from '@/lib/queries/keywords';
+import { getAnomalies } from '@/lib/queries/anomalies';
+import { shortName } from './asin-names';
 // TODO[wire]: replace with real exports from your existing query layer.
 // import { getAccountSummary, getCampaignsByAdType, getHarvestCandidates } from '@/lib/queries/account';
 // import { getCampaignWatchlist } from '@/lib/queries/campaigns';
@@ -219,15 +223,128 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
 /* -------------------------------------------------------------------------- */
 
 async function loadAlerts(period: ResolvedPeriod): Promise<{ alerts: Alert[]; summary: AlertSummary }> {
-  // TODO[wire]: getAnomalies + platform_insights critical/warning entries.
-  const alerts: Alert[] = [];
-  const summary: AlertSummary = {
-    total: alerts.length,
-    critical: alerts.filter((a) => a.severity === 'critical').length,
-    warning: alerts.filter((a) => a.severity === 'warning').length,
-    watch: alerts.filter((a) => a.severity === 'watch' || a.severity === 'info').length,
+  // lookbackDays spans the full dashboard period so getAnomalies windows correctly
+  // even when derived_metrics_daily has only one monthly-aggregate row.
+  const periodDays = Math.max(1,
+    Math.round((new Date(period.end + 'T00:00:00Z').getTime() - new Date(period.start + 'T00:00:00Z').getTime()) / 86_400_000) + 1
+  );
+
+  // platform_insights: 14-day wall-clock lookback (not period-relative).
+  // 14 days chosen because the analysis API may run daily; 7 days would miss
+  // insights written on weekends or when the scheduler skips a cycle.
+  const insightsCutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
+
+  const [anomalyItems, insightsRes] = await Promise.all([
+    getAnomalies(BRAND_ID, period.end, periodDays),
+    supabaseAdmin
+      .from('platform_insights')
+      .select('id, insight_type, severity, title, content, created_at')
+      .eq('brand_id', BRAND_ID)
+      .in('severity', ['critical', 'warning'])
+      .gte('created_at', insightsCutoff)
+      .order('created_at', { ascending: false })
+      .limit(50),
+  ]);
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+
+  function anomalyDomain(type: string): Domain {
+    if (['roas_drop', 'high_acos_campaign', 'zero_sales_campaign'].includes(type)) return 'PPC';
+    if (['spend_pacing', 'buy_box_drop', 'low_ntb_rate'].includes(type)) return 'BUSINESS';
+    return 'PPC';
+  }
+
+  function anomalyFigure(a: (typeof anomalyItems)[0]): { figure: string; metric: string } {
+    switch (a.type) {
+      case 'roas_drop':
+        return { figure: `${a.current_value.toFixed(2)}x ROAS`, metric: `${a.current_value.toFixed(2)}x ROAS` };
+      case 'spend_pacing':
+        return { figure: `$${Math.round(a.current_value).toLocaleString()} MTD`, metric: `$${Math.round(a.current_value).toLocaleString()} spend` };
+      case 'buy_box_drop':
+        return { figure: `${a.current_value.toFixed(1)}% buy box`, metric: `${a.current_value.toFixed(1)}% buy box` };
+      case 'high_acos_campaign':
+        return { figure: `${(a.current_value * 100).toFixed(1)}% ACoS`, metric: `${(a.current_value * 100).toFixed(1)}% ACoS` };
+      case 'zero_sales_campaign':
+        return { figure: '0 orders', metric: '0 orders' };
+      case 'low_ntb_rate':
+        return { figure: `${(a.current_value * 100).toFixed(2)}% NTB rate`, metric: `${(a.current_value * 100).toFixed(2)}% NTB` };
+      default:
+        return { figure: String(a.current_value), metric: a.metric };
+    }
+  }
+
+  const ANOMALY_RECS: Record<string, string> = {
+    roas_drop:              'Audit top-spend campaigns; pause underperformers and shift budget to high-ROAS ad groups.',
+    spend_pacing:           'Increase daily budgets or raise bids on high-performing campaigns to hit the monthly target.',
+    buy_box_drop:           'Check for price suppression, FBA inventory levels, and seller competition on the ASIN.',
+    high_acos_campaign:     'Reduce bids on high-ACoS targets, add negatives, and review match types.',
+    zero_sales_campaign:    'Pause campaign or add negative keywords; verify search term relevance.',
+    low_ntb_rate:           'Increase SB/SBV budget and test new creative to capture more upper-funnel traffic.',
   };
-  return { alerts, summary };
+
+  function insightDomain(insightType: string): Domain {
+    const t = insightType.toLowerCase();
+    if (/campaign|spend|roas|acos|ppc|bid|harvest/.test(t)) return 'PPC';
+    if (/rank|sqp|search.?query|impression.?share/.test(t)) return 'SEO';
+    return 'BUSINESS';
+  }
+
+  function normalizeSeverity(s: string): Severity {
+    if (s === 'critical') return 'critical';
+    if (s === 'warning')  return 'warning';
+    if (s === 'watch')    return 'watch';
+    return 'info';
+  }
+
+  // ── map anomalies ──────────────────────────────────────────────────────────
+  const anomalyAlerts: Alert[] = anomalyItems.map((a, i): Alert => {
+    const domain = anomalyDomain(a.type);
+    // ASIN codes from buy_box_drop — map to short product names
+    const entity = /^B[A-Z0-9]{9}$/.test(a.entity) ? shortName(a.entity) : a.entity;
+    const { figure, metric } = anomalyFigure(a);
+    return {
+      id:             `anom-${a.type}-${i}`,
+      severity:       a.severity as Severity,
+      domain,
+      entity,
+      figure,
+      description:    a.note,
+      recommendation: ANOMALY_RECS[a.type] ?? 'Review and act.',
+      href:           domain === 'PPC' ? '/ppc' : domain === 'SEO' ? '/seo' : '/business',
+      metric,
+    };
+  });
+
+  // ── map platform insights ──────────────────────────────────────────────────
+  type PiRow = Record<string, unknown>;
+  const insightAlerts: Alert[] = ((insightsRes.data ?? []) as unknown as PiRow[]).map((row): Alert => {
+    const domain = insightDomain(row['insight_type'] as string);
+    return {
+      id:             row['id'] as string,
+      severity:       normalizeSeverity(row['severity'] as string),
+      domain,
+      entity:         (row['title'] as string).slice(0, 60),
+      figure:         (row['title'] as string).slice(0, 60),
+      description:    (row['content'] as string).slice(0, 300),
+      recommendation: 'Review AI analysis and act on the findings.',
+      href:           domain === 'PPC' ? '/ppc' : domain === 'SEO' ? '/seo' : '/business',
+      metric:         (row['insight_type'] as string).replace(/_/g, ' '),
+    };
+  });
+
+  // ── merge + sort ───────────────────────────────────────────────────────────
+  const SEV_ORDER: Record<string, number> = { critical: 0, warning: 1, watch: 2, info: 3 };
+  const merged = [...anomalyAlerts, ...insightAlerts]
+    .sort((a, b) => (SEV_ORDER[a.severity] ?? 3) - (SEV_ORDER[b.severity] ?? 3));
+
+  const summary: AlertSummary = {
+    total:    merged.length,
+    critical: merged.filter((a) => a.severity === 'critical').length,
+    warning:  merged.filter((a) => a.severity === 'warning').length,
+    watch:    merged.filter((a) => a.severity === 'watch' || a.severity === 'info').length,
+  };
+
+  return { alerts: merged, summary };
 }
 
 /* -------------------------------------------------------------------------- */
