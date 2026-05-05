@@ -32,7 +32,10 @@ import type { ResolvedPeriod } from './period';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getMonthlyTarget, AOV_TARGET, CAC_TARGET, MER_TARGET } from './targets';
 import type { MonthIndex } from './targets';
-import { fmtUSDCompact, fmtUSD, fmtRoas, fmtIntCompact } from './format';
+import { fmtUSDCompact, fmtUSD, fmtRoas, fmtIntCompact, fmtPct, fmtPctSigned } from './format';
+import { getAccountSummary } from '@/lib/queries/account';
+import { getCampaignsByAdType } from '@/lib/queries/campaigns';
+import { getHarvestCandidates } from '@/lib/queries/keywords';
 // TODO[wire]: replace with real exports from your existing query layer.
 // import { getAccountSummary, getCampaignsByAdType, getHarvestCandidates } from '@/lib/queries/account';
 // import { getCampaignWatchlist } from '@/lib/queries/campaigns';
@@ -278,17 +281,168 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
 /* -------------------------------------------------------------------------- */
 
 async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
-  // TODO[wire]: getAccountSummary, getCampaignsByAdType, getHarvestCandidates,
-  // pinned watchlist via localStorage IDs joined to sp_campaign_performance.
+  const endDate = new Date(period.end + 'T00:00:00Z');
+  const year = endDate.getUTCFullYear();
+  const monthIndex = endDate.getUTCMonth() as MonthIndex;
+
+  // 14-day cutoff for 'new' campaign status (compare against campaign created_at)
+  const cutoff14d = new Date(endDate.getTime() - 14 * 86_400_000).toISOString();
+
+  const [byType, harvest, acct, metaRes] = await Promise.all([
+    getCampaignsByAdType(BRAND_ID, period.start, period.end),
+    getHarvestCandidates(BRAND_ID, period.start, period.end),
+    getAccountSummary(BRAND_ID, period.start, period.end),
+    supabaseAdmin
+      .from('campaigns')
+      .select('id, created_at')
+      .eq('brand_id', BRAND_ID),
+  ]);
+
+  const spRows  = byType['SP']  ?? [];
+  const sbRows  = byType['SB']  ?? [];
+  const sbvRows = byType['SBV'] ?? [];
+  // Any unexpected ad_type keys (UNKNOWN, null, etc.) fold into the total
+  const allRows = Object.values(byType).flat();
+
+  const sumF = (arr: typeof allRows, f: 'spend' | 'sales') =>
+    arr.reduce((a, r) => a + r[f], 0);
+
+  const totalSpend    = sumF(allRows, 'spend');
+  const totalSales    = sumF(allRows, 'sales');
+  const spSpend       = sumF(spRows,  'spend');
+  const spSales       = sumF(spRows,  'sales');
+  const sbCombSpend   = sumF(sbRows,  'spend') + sumF(sbvRows, 'spend');
+  const sbCombSales   = sumF(sbRows,  'sales') + sumF(sbvRows, 'sales');
+
+  const blendedRoas   = totalSpend > 0  ? totalSales   / totalSpend   : null;
+  const spRoas        = spSpend    > 0  ? spSales      / spSpend      : null;
+  const sbRoas        = sbCombSpend > 0 ? sbCombSales  / sbCombSpend  : null;
+  const sbShare       = totalSpend > 0  ? sbCombSpend  / totalSpend   : null;
+
+  const spendTarget = getMonthlyTarget('spend', year, monthIndex);
+  const roasTarget  = getMonthlyTarget('roas',  year, monthIndex);
+
+  const spendVar = spendTarget && totalSpend > 0
+    ? (totalSpend - spendTarget) / spendTarget
+    : null;
+
+  const spendTone: PPCStatRow['tone'] =
+    spendVar === null  ? 'neutral'  :
+    spendVar > 0.10    ? 'critical' :
+    spendVar > 0.05    ? 'warning'  :
+    spendVar < 0       ? 'positive' : 'neutral';
+
+  const roasRatio = roasTarget && blendedRoas !== null
+    ? blendedRoas / roasTarget
+    : null;
+
+  const roasTone: PPCStatRow['tone'] =
+    roasRatio === null ? 'neutral'  :
+    roasRatio >= 1.0   ? 'positive' :
+    roasRatio >= 0.80  ? 'warning'  : 'critical';
+
+  const sbShareTone: PPCStatRow['tone'] =
+    sbShare === null   ? 'neutral'  :
+    sbShare >= 0.25    ? 'positive' :
+    sbShare >= 0.20    ? 'neutral'  : 'warning';
+
+  const sbShareSecondary =
+    sbShare === null   ? 'target 25%+'                  :
+    sbShare >= 0.25    ? 'on target'                    :
+    sbShare >= 0.20    ? 'target 25%+'                  :
+    'underinvested · target 25%+';
+
+  const harvestCount   = harvest.length;
+  const organicRevenue = acct.organic_revenue;
+  const organicShare   = acct.total_revenue > 0 ? organicRevenue / acct.total_revenue : null;
+
   const stats: PPCStatRow[] = [
-    { id: 'spend',    label: 'Total spend',          primary: '—', secondary: 'target —',         tone: 'neutral' },
-    { id: 'roas',     label: 'Blended ROAS',         primary: '—', secondary: 'SP — · SB —',      tone: 'neutral' },
-    { id: 'sb_share', label: 'SB + SBV spend share', primary: '—', secondary: 'target 25%+',      tone: 'neutral' },
-    { id: 'harvest',  label: 'Harvest candidates',   primary: '—', secondary: 'ready for exact',  tone: 'neutral' },
-    { id: 'organic',  label: 'Organic revenue',      primary: '—', secondary: '— of total',       tone: 'neutral' },
+    {
+      id: 'spend',
+      label: 'Total spend',
+      primary: totalSpend > 0 ? fmtUSDCompact(totalSpend) : '—',
+      secondary: spendTarget !== null
+        ? `target ${fmtUSDCompact(spendTarget)}${spendVar !== null ? ` · ${fmtPctSigned(spendVar)}` : ''}`
+        : 'target —',
+      tone: spendTone,
+    },
+    {
+      id: 'roas',
+      label: 'Blended ROAS',
+      primary: fmtRoas(blendedRoas),
+      secondary: `SP ${fmtRoas(spRoas)} · SB ${fmtRoas(sbRoas)} · target ${roasTarget !== null ? fmtRoas(roasTarget) : '—'}`,
+      tone: roasTone,
+    },
+    {
+      id: 'sb_share',
+      label: 'SB + SBV spend share',
+      primary: sbShare !== null ? fmtPct(sbShare) : '—',
+      secondary: sbShareSecondary,
+      tone: sbShareTone,
+    },
+    {
+      id: 'harvest',
+      label: 'Harvest candidates',
+      primary: `${harvestCount} terms`,
+      secondary: 'ready for manual exact match',
+      tone: harvestCount > 0 ? 'positive' : 'neutral',
+    },
+    {
+      id: 'organic',
+      label: 'Organic revenue',
+      primary: organicRevenue > 0 ? fmtUSDCompact(organicRevenue) : '—',
+      secondary: organicShare !== null ? `${fmtPct(organicShare)} of total` : '— of total',
+      tone: 'neutral',
+    },
   ];
-  const campaigns: CampaignRow[] = [];
-  return { stats, campaigns };
+
+  // Watchlist — map queries.CampaignRow → dashboard CampaignRow
+  const createdAtMap = new Map<string, string>();
+  if (!metaRes.error && metaRes.data) {
+    for (const c of metaRes.data) {
+      if (c.created_at) createdAtMap.set(c.id, c.created_at as string);
+    }
+  }
+
+  function toAdType(raw: string | null): 'SP' | 'SB' | 'SBV' {
+    if (raw === 'SBV') return 'SBV';
+    if (raw === 'SB')  return 'SB';
+    return 'SP';
+  }
+
+  function toStatus(
+    adType: 'SP' | 'SB' | 'SBV',
+    roas: number | null,
+    spend: number,
+    campaignId: string,
+  ): CampaignRow['status'] {
+    if (adType === 'SBV') return 'sbv';
+    const createdAt = createdAtMap.get(campaignId);
+    if (createdAt && createdAt > cutoff14d) return 'new';
+    if (roas !== null && roas >= 5) return 'top';
+    if (roas !== null && roas < 2 && spend > 50) return 'waste';
+    return 'watching';
+  }
+
+  const watchlist: CampaignRow[] = allRows
+    .filter(c => c.spend > 0)
+    .map((c): CampaignRow => {
+      const adType = toAdType(c.ad_type);
+      return {
+        id:          c.campaign_uuid,
+        name:        c.campaign_name ?? c.campaign_uuid,
+        adType,
+        spend:       c.spend,
+        roas:        c.roas,
+        orders:      c.orders,
+        impressions: c.impressions,
+        status:      toStatus(adType, c.roas, c.spend, c.campaign_uuid),
+      };
+    })
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 200);
+
+  return { stats, campaigns: watchlist };
 }
 
 /* -------------------------------------------------------------------------- */
