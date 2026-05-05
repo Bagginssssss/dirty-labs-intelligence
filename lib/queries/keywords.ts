@@ -1,6 +1,18 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { SearchTermRow } from './types'
 
+// Harvest threshold constants — tuned from defaults (orders≥1, roas≥3) which
+// produced 0 March 2026 candidates due to INB-36 (targeting_type never
+// populated by CSV ingestion). orders≥2 filters one-off conversions;
+// clicks≥10 is the data-quality gate; ROAS≥2.5 is looser than tooling
+// default 3.33 to surface optimization candidates that bid control + ASIN
+// targeting can promote post-harvest. Values may be tuned further as
+// operational insight builds. Tiered surface (ready vs investigation) is
+// planned as INB-37.
+const HARVEST_MIN_ORDERS = 2
+const HARVEST_MIN_ROAS   = 2.5
+const HARVEST_MIN_CLICKS = 10
+
 type RawSTR = {
   campaign_id: string
   customer_search_term: string | null
@@ -119,16 +131,17 @@ export async function getWasteSearchTerms(
 export async function getHarvestCandidates(
   brandId: string,
   startDate: string,
-  endDate: string,
-  minRoas = 3.0,
-  minOrders = 1
+  endDate: string
 ): Promise<SearchTermRow[]> {
-  // Get auto campaign IDs first
+  // INB-36 stopgap: campaigns.targeting_type is never populated by CSV
+  // ingestion (column is missing from the SP Campaign Performance report).
+  // Detect auto campaigns by name convention. SP.A prefix = Auto targeting,
+  // parallel to SP./SB./SBV. ad-type prefixes documented in CLAUDE.md.
   const { data: autoCampaigns, error: autoErr } = await supabaseAdmin
     .from('campaigns')
     .select('id')
     .eq('brand_id', brandId)
-    .eq('targeting_type', 'AUTO')
+    .ilike('campaign_name', 'SP.A%')
 
   if (autoErr) throw new Error(`getHarvestCandidates campaigns failed: ${autoErr.message}`)
 
@@ -140,7 +153,11 @@ export async function getHarvestCandidates(
   const terms    = aggregateByTerm(autoRows, meta)
 
   return terms
-    .filter(t => t.orders >= minOrders && t.roas !== null && t.roas >= minRoas)
+    .filter(t =>
+      t.orders >= HARVEST_MIN_ORDERS &&
+      t.clicks >= HARVEST_MIN_CLICKS &&
+      t.roas !== null && t.roas >= HARVEST_MIN_ROAS
+    )
     .sort((a, b) => b.sales - a.sales)
 }
 
