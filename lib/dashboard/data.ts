@@ -30,6 +30,9 @@ import type {
 import type { ResolvedPeriod } from './period';
 
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { getMonthlyTarget, AOV_TARGET, CAC_TARGET, MER_TARGET } from './targets';
+import type { MonthIndex } from './targets';
+import { fmtUSDCompact, fmtUSD, fmtRoas, fmtIntCompact } from './format';
 // TODO[wire]: replace with real exports from your existing query layer.
 // import { getAccountSummary, getCampaignsByAdType, getHarvestCandidates } from '@/lib/queries/account';
 // import { getCampaignWatchlist } from '@/lib/queries/campaigns';
@@ -37,7 +40,6 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 // import { getSearchQueryGaps } from '@/lib/queries/keywords';
 // import { getOpportunities } from '@/lib/queries/opportunities';
 // import { getAnomalies } from '@/lib/queries/anomalies';
-// import { getGoalProgress } from '@/lib/queries/goals';
 // import { getASINPerformance, getSSPerformance } from '@/lib/queries/products';
 // import { calculateDerivedMetricsRange } from '@/lib/derived-metrics';
 
@@ -48,27 +50,135 @@ export const BRAND_ID = '47a96175-ed58-4104-a2ff-c925d6143309';
 /* -------------------------------------------------------------------------- */
 
 async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
-  // TODO[wire]: derive_metrics_daily for actuals, getGoalProgress for targets,
-  // and use lib/dashboard/targets.ts for hardcoded monthly figures.
-  const stub = (id: GoalCard['id'], label: string): GoalCard => ({
-    id,
-    label,
-    value: '—',
-    target: '—',
-    variance: null,
-    pacing: null,
-    freshnessDate: period.end,
-  });
+  const endDate = new Date(period.end + 'T00:00:00Z');
+  const year = endDate.getUTCFullYear();
+  const monthIndex = endDate.getUTCMonth() as MonthIndex;
+  const m = String(monthIndex + 1).padStart(2, '0');
+  const monthStart = `${year}-${m}-01`;
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const monthEnd = `${year}-${m}-${String(lastDay).padStart(2, '0')}`;
+
+  const { data: rows } = await supabaseAdmin
+    .from('derived_metrics_daily')
+    .select('total_revenue, total_ppc_spend, total_ppc_sales, total_orders, ntb_orders, ss_revenue, metric_date')
+    .eq('brand_id', BRAND_ID)
+    .gte('metric_date', monthStart)
+    .lte('metric_date', monthEnd);
+
+  type Row = Record<string, unknown>;
+  const typedRows = (rows ?? []) as unknown as Row[];
+
+  const sum = (field: string): number =>
+    typedRows.reduce((acc, r) => acc + (Number(r[field]) || 0), 0);
+
+  const totalRevenue  = sum('total_revenue');
+  const totalSpend    = sum('total_ppc_spend');
+  const totalPpcSales = sum('total_ppc_sales');
+  const totalOrders   = sum('total_orders');
+  const totalNtb      = sum('ntb_orders');
+  const ssRevenue     = sum('ss_revenue');
+
+  const actualRoas = totalSpend > 0 ? totalPpcSales / totalSpend : null;
+  const actualMer  = totalSpend > 0 ? totalRevenue  / totalSpend : null;
+  const actualAov  = totalOrders > 0 ? totalRevenue / totalOrders : null;
+  const actualCac  = totalNtb > 0   ? totalSpend   / totalNtb    : null;
+
+  const salesTarget = getMonthlyTarget('sales', year, monthIndex);
+  const spendTarget = getMonthlyTarget('spend', year, monthIndex);
+  const roasTarget  = getMonthlyTarget('roas',  year, monthIndex);
+  const ntbTarget   = getMonthlyTarget('ntb',   year, monthIndex);
+
+  const varPct = (actual: number | null, target: number | null): number | null =>
+    actual !== null && target !== null && target !== 0
+      ? (actual - target) / target
+      : null;
+
+  const pace = (actual: number | null, target: number | null): number | null =>
+    actual !== null && target !== null && target !== 0
+      ? Math.min(Math.max(actual / target, 0), 1.25)
+      : null;
+
+  const freshnessDate = period.end;
+  const hasData = typedRows.length > 0;
+
+  const penetration = totalRevenue > 0 ? ssRevenue / totalRevenue : null;
+  const ssVariance: number | string | null =
+    penetration !== null && penetration >= 0.30 ? 'on track' : null;
 
   return [
-    stub('total_sales',   'TOTAL SALES'),
-    stub('ad_spend',      'AD SPEND'),
-    stub('ppc_roas',      'PPC ROAS'),
-    stub('mer',           'MER'),
-    stub('aov',           'AOV'),
-    { ...stub('ntb_customers', 'NTB CUSTOMERS'), sourceTag: 'BA pending' },
-    stub('cac',           'CAC'),
-    stub('ss_revenue',    'S&S REVENUE'),
+    {
+      id: 'total_sales',
+      label: 'TOTAL SALES',
+      value: hasData ? fmtUSDCompact(totalRevenue) : '—',
+      target: salesTarget !== null ? fmtUSDCompact(salesTarget) : '—',
+      variance: varPct(totalRevenue, salesTarget),
+      pacing: pace(totalRevenue, salesTarget),
+      freshnessDate,
+    },
+    {
+      id: 'ad_spend',
+      label: 'AD SPEND',
+      value: hasData ? fmtUSDCompact(totalSpend) : '—',
+      target: spendTarget !== null ? fmtUSDCompact(spendTarget) : '—',
+      variance: varPct(totalSpend, spendTarget),
+      pacing: pace(totalSpend, spendTarget),
+      freshnessDate,
+    },
+    {
+      id: 'ppc_roas',
+      label: 'PPC ROAS',
+      value: fmtRoas(actualRoas),
+      target: roasTarget !== null ? fmtRoas(roasTarget) : '—',
+      variance: varPct(actualRoas, roasTarget),
+      pacing: pace(actualRoas, roasTarget),
+      freshnessDate,
+    },
+    {
+      id: 'mer',
+      label: 'MER',
+      value: fmtRoas(actualMer),
+      target: fmtRoas(MER_TARGET),
+      variance: varPct(actualMer, MER_TARGET),
+      pacing: pace(actualMer, MER_TARGET),
+      freshnessDate,
+    },
+    {
+      id: 'aov',
+      label: 'AOV',
+      value: actualAov !== null ? fmtUSD(actualAov, 2) : '—',
+      target: fmtUSD(AOV_TARGET, 2),
+      variance: varPct(actualAov, AOV_TARGET),
+      pacing: pace(actualAov, AOV_TARGET),
+      freshnessDate,
+    },
+    {
+      id: 'ntb_customers',
+      label: 'NTB CUSTOMERS',
+      value: hasData ? fmtIntCompact(totalNtb) : '—',
+      target: ntbTarget !== null ? fmtIntCompact(ntbTarget) : '—',
+      variance: varPct(totalNtb, ntbTarget),
+      pacing: pace(totalNtb, ntbTarget),
+      freshnessDate,
+      sourceTag: 'BA pending',
+    },
+    {
+      id: 'cac',
+      label: 'CAC',
+      value: actualCac !== null ? fmtUSD(actualCac, 2) : '—',
+      target: fmtUSD(CAC_TARGET, 2),
+      variance: varPct(actualCac, CAC_TARGET),
+      pacing: pace(actualCac, CAC_TARGET),
+      freshnessDate,
+    },
+    {
+      id: 'ss_revenue',
+      label: 'S&S REVENUE',
+      value: hasData ? fmtUSDCompact(ssRevenue) : '—',
+      target: '—',
+      variance: ssVariance,
+      pacing: null,
+      freshnessDate,
+    },
   ];
 }
 
