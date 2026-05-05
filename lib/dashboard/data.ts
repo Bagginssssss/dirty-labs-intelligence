@@ -953,35 +953,6 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
 /* -------------------------------------------------------------------------- */
 
 async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData> {
-  const [brandQueriesRes, shareGapsRes, rawMovers] = await Promise.all([
-    // 3A: top brand queries — branded search terms for Dirty Labs
-    supabaseAdmin
-      .from('search_query_performance')
-      .select('search_query, purchases_brand_share, search_query_volume, impressions_total, purchases_brand')
-      .eq('brand_id', BRAND_ID)
-      .gte('report_date', period.start)
-      .lte('report_date', period.end)
-      .or('search_query.ilike.%dirty labs%,search_query.ilike.%dirtylabs%')
-      .order('purchases_brand', { ascending: false, nullsFirst: false })
-      .limit(5),
-
-    // 3B: share gaps — high-volume queries where Dirty Labs has low purchase share
-    supabaseAdmin
-      .from('search_query_performance')
-      .select('search_query, purchases_brand_share, search_query_volume, impressions_total, purchases_total')
-      .eq('brand_id', BRAND_ID)
-      .gte('report_date', period.start)
-      .lte('report_date', period.end)
-      .gt('purchases_total', 100)
-      .lt('purchases_brand_share', 10)
-      .not('search_query', 'ilike', '%dirty%')
-      .order('purchases_total', { ascending: false, nullsFirst: false })
-      .limit(5),
-
-    // 3C: keyword rank movers (|delta| >= 5)
-    getRankMovers(BRAND_ID, period.start, period.end, 5),
-  ]);
-
   type SqpRaw = {
     search_query: string;
     purchases_brand_share: number | null;
@@ -996,20 +967,61 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
     searchVolume: Number(r.search_query_volume ?? r.impressions_total) || 0,
   });
 
-  const brandQueries: SQPRow[] = ((brandQueriesRes.data ?? []) as unknown as SqpRaw[]).map(toSQPRow);
-  const shareGaps: SQPRow[]    = ((shareGapsRes.data   ?? []) as unknown as SqpRaw[]).map(toSQPRow);
+  // 3A: top brand queries — each section isolated so one failure doesn't block others
+  let brandQueries: SQPRow[] = [];
+  try {
+    const res = await supabaseAdmin
+      .from('search_query_performance')
+      .select('search_query, purchases_brand_share, search_query_volume, impressions_total, purchases_brand')
+      .eq('brand_id', BRAND_ID)
+      .gte('report_date', period.start)
+      .lte('report_date', period.end)
+      .or('search_query.ilike.%dirty labs%,search_query.ilike.%dirtylabs%')
+      .order('purchases_brand', { ascending: false, nullsFirst: false })
+      .limit(5);
+    if (res.error) throw res.error;
+    brandQueries = ((res.data ?? []) as unknown as SqpRaw[]).map(toSQPRow);
+  } catch (err) {
+    console.error('loadSearchIntel: brand queries failed:', err);
+  }
 
-  // getRankMovers: organic_rank_delta = start − end (positive = improved).
-  // KeywordRankMovers component: delta < 0 = improved (↑ green). Must negate.
-  const rankMovers: RankMover[] = rawMovers
-    .map(r => {
-      if (!(r.asin in ASIN_NAMES)) return null;
-      const rank  = r.organic_rank_end ?? r.rank_value_end ?? 0;
-      const delta = -(r.organic_rank_delta ?? r.rank_value_delta ?? 0);
-      return { rank, keyword: r.keyword, asinShortName: shortName(r.asin), asin: r.asin, delta };
-    })
-    .filter((r): r is RankMover => r !== null)
-    .slice(0, 5);
+  // 3B: share gaps — high-volume queries where Dirty Labs has low purchase share
+  let shareGaps: SQPRow[] = [];
+  try {
+    const res = await supabaseAdmin
+      .from('search_query_performance')
+      .select('search_query, purchases_brand_share, search_query_volume, impressions_total, purchases_total')
+      .eq('brand_id', BRAND_ID)
+      .gte('report_date', period.start)
+      .lte('report_date', period.end)
+      .gt('purchases_total', 100)
+      .lt('purchases_brand_share', 10)
+      .not('search_query', 'ilike', '%dirty%')
+      .order('purchases_total', { ascending: false, nullsFirst: false })
+      .limit(5);
+    if (res.error) throw res.error;
+    shareGaps = ((res.data ?? []) as unknown as SqpRaw[]).map(toSQPRow);
+  } catch (err) {
+    console.error('loadSearchIntel: share gaps failed:', err);
+  }
+
+  // 3C: keyword rank movers (|delta| >= 5)
+  // rank_value_delta = start − end (positive = improved); component uses delta < 0 = improved — negate.
+  let rankMovers: RankMover[] = [];
+  try {
+    const rawMovers = await getRankMovers(BRAND_ID, period.start, period.end, 5);
+    rankMovers = rawMovers
+      .map(r => {
+        if (!(r.asin in ASIN_NAMES)) return null;
+        const rank  = r.rank_value_end ?? 0;
+        const delta = -(r.rank_value_delta ?? 0);
+        return { rank, keyword: r.keyword, asinShortName: shortName(r.asin), asin: r.asin, delta };
+      })
+      .filter((r): r is RankMover => r !== null)
+      .slice(0, 5);
+  } catch (err) {
+    console.error('loadSearchIntel: rank movers failed:', err);
+  }
 
   const MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const fmt  = (d: string) => { const [,m,day] = d.split('-').map(Number); return `${MONS[m-1]} ${day}`; };

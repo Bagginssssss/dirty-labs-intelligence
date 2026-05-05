@@ -22,7 +22,7 @@ export async function getKeywordRankSummary(
   const [rankRes, asinMap] = await Promise.all([
     supabaseAdmin
       .from('scale_insights_keyword_rank')
-      .select('asin_id, keyword, organic_rank, sponsored_rank, rank_value, search_volume, tracked, report_date')
+      .select('asin_id, keyword, rank_value, search_volume, tracked, report_date')
       .eq('brand_id', brandId)
       .eq('report_date', date),
     fetchAsinMeta(brandId),
@@ -37,14 +37,12 @@ export async function getKeywordRankSummary(
       asin_id:       r.asin_id as string,
       asin:          meta?.asin ?? '',
       title:         meta?.title ?? null,
-      organic_rank:  r.organic_rank !== null ? Number(r.organic_rank) : null,
-      sponsored_rank: r.sponsored_rank !== null ? Number(r.sponsored_rank) : null,
       rank_value:    r.rank_value !== null ? Number(r.rank_value) : null,
       search_volume: r.search_volume !== null ? Number(r.search_volume) : null,
       tracked:       r.tracked as boolean | null,
       report_date:   r.report_date as string,
     }
-  }).sort((a, b) => (a.organic_rank ?? 999) - (b.organic_rank ?? 999))
+  }).sort((a, b) => (a.rank_value ?? 999) - (b.rank_value ?? 999))
 }
 
 export async function getRankMovers(
@@ -56,7 +54,7 @@ export async function getRankMovers(
   const [rankRes, asinMap] = await Promise.all([
     supabaseAdmin
       .from('scale_insights_keyword_rank')
-      .select('asin_id, keyword, organic_rank, rank_value, search_volume, report_date')
+      .select('asin_id, keyword, rank_value, search_volume, report_date')
       .eq('brand_id', brandId)
       .gte('report_date', startDate)
       .lte('report_date', endDate)
@@ -69,7 +67,6 @@ export async function getRankMovers(
   // Group by (asin_id, keyword) — keep first and last date
   const acc = new Map<string, {
     asin_id: string; keyword: string; search_volume: number | null
-    organic_start: number | null; organic_end: number | null
     rv_start: number | null; rv_end: number | null
   }>()
 
@@ -81,16 +78,13 @@ export async function getRankMovers(
         asin_id:       row.asin_id as string,
         keyword:       row.keyword as string,
         search_volume: row.search_volume !== null ? Number(row.search_volume) : null,
-        organic_start: row.organic_rank !== null ? Number(row.organic_rank) : null,
-        organic_end:   row.organic_rank !== null ? Number(row.organic_rank) : null,
         rv_start:      row.rank_value !== null ? Number(row.rank_value) : null,
         rv_end:        row.rank_value !== null ? Number(row.rank_value) : null,
       })
     } else {
       // Rows are ordered by date — update "end" values as we go
       const a = acc.get(key)!
-      a.organic_end = row.organic_rank !== null ? Number(row.organic_rank) : null
-      a.rv_end      = row.rank_value !== null ? Number(row.rank_value) : null
+      a.rv_end = row.rank_value !== null ? Number(row.rank_value) : null
       if (row.search_volume !== null) a.search_volume = Number(row.search_volume)
     }
   }
@@ -98,30 +92,21 @@ export async function getRankMovers(
   return Array.from(acc.values())
     .map(a => {
       const meta = asinMap.get(a.asin_id)
-      const organicDelta = (a.organic_start !== null && a.organic_end !== null)
-        ? a.organic_start - a.organic_end  // positive = improved (lower rank number)
-        : null
       const rvDelta = (a.rv_start !== null && a.rv_end !== null)
-        ? a.rv_start - a.rv_end
+        ? a.rv_start - a.rv_end  // positive = improved (lower rank number)
         : null
 
       return {
-        keyword:            a.keyword,
-        asin_id:            a.asin_id,
-        asin:               meta?.asin ?? '',
-        title:              meta?.title ?? null,
-        organic_rank_start: a.organic_start,
-        organic_rank_end:   a.organic_end,
-        organic_rank_delta: organicDelta,
-        rank_value_start:   a.rv_start,
-        rank_value_end:     a.rv_end,
-        rank_value_delta:   rvDelta,
-        search_volume:      a.search_volume,
+        keyword:          a.keyword,
+        asin_id:          a.asin_id,
+        asin:             meta?.asin ?? '',
+        title:            meta?.title ?? null,
+        rank_value_start: a.rv_start,
+        rank_value_end:   a.rv_end,
+        rank_value_delta: rvDelta,
+        search_volume:    a.search_volume,
       }
     })
-    .filter(r =>
-      (r.organic_rank_delta !== null && Math.abs(r.organic_rank_delta) >= minDelta) ||
-      (r.rank_value_delta !== null && Math.abs(r.rank_value_delta) >= minDelta)
-    )
-    .sort((a, b) => Math.abs(b.organic_rank_delta ?? b.rank_value_delta ?? 0) - Math.abs(a.organic_rank_delta ?? a.rank_value_delta ?? 0))
+    .filter(r => r.rank_value_delta !== null && Math.abs(r.rank_value_delta) >= minDelta)
+    .sort((a, b) => Math.abs(b.rank_value_delta ?? 0) - Math.abs(a.rank_value_delta ?? 0))
 }

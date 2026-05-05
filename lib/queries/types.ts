@@ -116,8 +116,6 @@ export interface RankRow {
   asin_id: string
   asin: string
   title: string | null
-  organic_rank: number | null
-  sponsored_rank: number | null
   rank_value: number | null
   search_volume: number | null
   tracked: boolean | null
@@ -129,9 +127,6 @@ export interface RankMoverRow {
   asin_id: string
   asin: string
   title: string | null
-  organic_rank_start: number | null
-  organic_rank_end: number | null
-  organic_rank_delta: number | null
   rank_value_start: number | null
   rank_value_end: number | null
   rank_value_delta: number | null
