@@ -54,6 +54,7 @@ export function CampaignWatchlist({ initial }: { initial: CampaignRow[] }) {
     return list
       .map((c) => ({ ...c, pinned: pinned.has(c.id) }))
       .sort((a, b) => {
+        // Pinned-first within both search and browse modes; spend-desc within each group
         if ((a.pinned ? 1 : 0) !== (b.pinned ? 1 : 0)) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
         return b.spend - a.spend;
       })
@@ -72,6 +73,7 @@ export function CampaignWatchlist({ initial }: { initial: CampaignRow[] }) {
       <table className="w-full border-collapse text-[8px]">
         <thead>
           <tr className="text-left">
+            <th className="w-[14px] py-[2px] px-1 border-b border-[#1e1e2e]" />
             <th className="text-[8px] tracking-[0.05em] text-[#3b82f6] py-[2px] px-1 border-b border-[#1e1e2e]">CAMPAIGN</th>
             <th className="text-[8px] tracking-[0.05em] text-[#3b82f6] py-[2px] px-1 border-b border-[#1e1e2e] text-right">SPEND</th>
             <th className="text-[8px] tracking-[0.05em] text-[#3b82f6] py-[2px] px-1 border-b border-[#1e1e2e] text-right">ROAS</th>
@@ -84,7 +86,15 @@ export function CampaignWatchlist({ initial }: { initial: CampaignRow[] }) {
           {visible.map((c) => {
             const st = STATUS[c.status];
             return (
-              <tr key={c.id} className="hover:bg-[#1e1e2e]/40 cursor-pointer" onClick={() => togglePin(c.id)}>
+              <tr key={c.id} className="hover:bg-[#1e1e2e]/40">
+                <td
+                  className="py-[2px] px-1 border-b border-[#1e1e2e]/30 cursor-pointer w-[14px] text-center"
+                  onClick={() => togglePin(c.id)}
+                >
+                  {c.pinned
+                    ? <span className="text-emerald-500 text-[9px] leading-none">✓</span>
+                    : <span className="inline-block w-[9px]" />}
+                </td>
                 <td className="py-[2px] px-1 text-[#94a3b8] border-b border-[#1e1e2e]/30 whitespace-nowrap truncate max-w-[20ch]">
                   {c.name}
                 </td>
@@ -98,6 +108,7 @@ export function CampaignWatchlist({ initial }: { initial: CampaignRow[] }) {
           })}
           {!search && (
             <tr>
+              <td className="py-[2px] px-1 border-b border-[#1e1e2e]/30" />
               <td className="py-[2px] px-1 text-[#1e1e3a] border-b border-[#1e1e2e]/30">+ pin campaign...</td>
               <td colSpan={5} className="border-b border-[#1e1e2e]/30" />
             </tr>
