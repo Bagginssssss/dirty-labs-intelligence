@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import type { CampaignRow, CampaignStatus } from '@/lib/dashboard/types';
 import { fmtIntCompact, fmtRoas, fmtUSDCompact } from '@/lib/dashboard/format';
 
-const MAX_PINS = 10;
+const MAX_PINS = 25;
 const STORAGE_KEY = 'dl:watchlist:pinned';
 
 const STATUS: Record<CampaignStatus, { text: string; tone: string }> = {
@@ -63,12 +64,22 @@ export function CampaignWatchlist({ initial }: { initial: CampaignRow[] }) {
 
   return (
     <div>
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="🔍  search campaigns to pin..."
-        className="w-full bg-[#111113] border border-[#1e1e2e] rounded-[3px] px-[7px] py-1 text-[9px] text-[#94a3b8] placeholder:text-[#475569] mb-[5px] focus:outline-none focus:border-[#3b82f6]/40"
-      />
+      <div className="relative mb-[5px]">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔍  search campaigns to pin..."
+          className="w-full bg-[#111113] border border-[#1e1e2e] rounded-[3px] px-[7px] py-1 text-[9px] text-[#94a3b8] placeholder:text-[#475569] focus:outline-none focus:border-[#3b82f6]/40"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
+          >
+            <X size={10} />
+          </button>
+        )}
+      </div>
 
       <table className="w-full border-collapse text-[8px]">
         <thead>
@@ -95,7 +106,7 @@ export function CampaignWatchlist({ initial }: { initial: CampaignRow[] }) {
                     ? <span className="text-emerald-500 text-[9px] leading-none">✓</span>
                     : <span className="inline-block w-[9px]" />}
                 </td>
-                <td className="py-[2px] px-1 text-[#94a3b8] border-b border-[#1e1e2e]/30 whitespace-nowrap truncate max-w-[20ch]">
+                <td className="py-[2px] px-1 text-[#94a3b8] border-b border-[#1e1e2e]/30 whitespace-nowrap truncate max-w-[20ch]" title={c.name}>
                   {c.name}
                 </td>
                 <td className="py-[2px] px-1 text-[#94a3b8] border-b border-[#1e1e2e]/30 text-right whitespace-nowrap">{fmtUSDCompact(c.spend, 0)}</td>
