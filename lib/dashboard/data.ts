@@ -212,6 +212,88 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Alerts — markdown helpers                                                  */
+/* -------------------------------------------------------------------------- */
+
+function stripMd(text: string): string {
+  return text
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^---+\n?/gm, '')
+    .replace(/\n+/g, ' ')
+    .trim();
+}
+
+/**
+ * Parse a platform_insights markdown content blob into plain-text Alert fields.
+ * Expected structure:
+ *   ## [emoji] SEVERITY: Campaign Name
+ *   **Figure | Spend | Status**
+ *   ### What the data shows
+ *   Plain explanation...
+ *   ### Recommended action
+ *   1. Do this thing.
+ */
+function parseInsightContent(title: string, content: string): {
+  entity: string; figure: string; description: string; recommendation: string;
+} {
+  let entity = title.slice(0, 80);
+  let figure = title.slice(0, 80);
+  let description = '';
+  let recommendation = 'Review AI analysis and act on findings.';
+
+  const lines = content.split('\n');
+
+  // Entity: "## [emoji] SEVERITY: Campaign name" — take text after last ": "
+  const entityLine = lines.find(l => /^## /.test(l));
+  if (entityLine) {
+    const raw = entityLine.replace(/^## /, '').trim();
+    const colon = raw.indexOf(': ');
+    entity = ((colon !== -1 ? raw.slice(colon + 2) : raw).trim()).slice(0, 80);
+  }
+
+  // Figure: first **bold** line (the stats summary immediately after entity header)
+  const boldMatch = content.match(/^\*\*(.+?)\*\*\s*$/m);
+  if (boldMatch) figure = boldMatch[1].trim().slice(0, 120);
+
+  // Description: first paragraph under "### What the data shows" or "### Context"
+  let capDesc = false;
+  for (const line of lines) {
+    if (/^###\s+(What the data shows|Context)/i.test(line)) { capDesc = true; continue; }
+    if (capDesc && /^#/.test(line)) break;
+    if (capDesc && line.trim() && !line.startsWith('#')) {
+      const plain = stripMd(line);
+      if (plain.length > 20) {
+        const sentEnd = plain.slice(0, 180).search(/[.!?]\s/);
+        description = sentEnd > 20 ? plain.slice(0, sentEnd + 1) : plain.slice(0, 180);
+        break;
+      }
+    }
+  }
+  if (!description) {
+    // Fallback: first substantive non-header paragraph
+    const fallback = lines.find(l =>
+      !l.startsWith('#') && !l.startsWith('---') && !l.startsWith('**') && l.trim().length > 40
+    );
+    if (fallback) description = stripMd(fallback).slice(0, 180);
+  }
+
+  // Recommendation: first item from "### Recommended action"
+  let capRec = false;
+  for (const line of lines) {
+    if (/^###\s+(Recommended action|What you should do)/i.test(line)) { capRec = true; continue; }
+    if (capRec && /^#/.test(line)) break;
+    if (capRec && line.trim()) {
+      recommendation = stripMd(line).replace(/^\d+\.\s*/, '').trim().slice(0, 200);
+      break;
+    }
+  }
+
+  return { entity, figure, description, recommendation };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Alerts                                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -369,14 +451,18 @@ async function loadAlerts(period: ResolvedPeriod): Promise<{ alerts: Alert[]; su
   type PiRow = Record<string, unknown>;
   const insightAlerts: Alert[] = ((insightsRes.data ?? []) as unknown as PiRow[]).map((row): Alert => {
     const domain = insightDomain(row['insight_type'] as string);
+    const { entity, figure, description, recommendation } = parseInsightContent(
+      row['title'] as string,
+      row['content'] as string,
+    );
     return {
       id:             row['id'] as string,
       severity:       normalizeSeverity(row['severity'] as string),
       domain,
-      entity:         (row['title'] as string).slice(0, 60),
-      figure:         (row['title'] as string).slice(0, 60),
-      description:    (row['content'] as string).slice(0, 300),
-      recommendation: 'Review AI analysis and act on the findings.',
+      entity,
+      figure,
+      description:    description || 'See AI analysis for details.',
+      recommendation,
       href:           domain === 'PPC' ? '/ppc' : domain === 'SEO' ? '/seo' : '/business',
       metric:         (row['insight_type'] as string).replace(/_/g, ' '),
     };
