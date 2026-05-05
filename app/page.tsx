@@ -25,7 +25,7 @@ export default async function CommandCenter({
 
   return (
     <div className="min-h-screen bg-[#111113] text-[#e2e8f0] antialiased font-mono">
-      <Header period={period} today={today} />
+      <Header today={today} />
 
       {data.period.fellBack && (
         <div className="mx-auto max-w-[1600px] px-4 pt-3">
@@ -44,7 +44,7 @@ export default async function CommandCenter({
       </div>
 
       <div className="mx-auto max-w-[1600px] px-4">
-        <GoalRail cards={data.goals} periodLabel={data.period.effectiveLabel} />
+        <GoalRail cards={data.goals} period={period} />
       </div>
 
       <section className="mx-auto max-w-[1600px] px-4">

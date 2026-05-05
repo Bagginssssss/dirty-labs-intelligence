@@ -1,12 +1,14 @@
 import type { GoalCard, GoalCardId } from '@/lib/dashboard/types';
+import type { ResolvedPeriod } from '@/lib/dashboard/period';
+import { DashboardPeriodPicker } from './DashboardPeriodPicker';
 import { fmtDate, fmtPctSigned } from '@/lib/dashboard/format';
 
-export function GoalRail({ cards, periodLabel }: { cards: GoalCard[]; periodLabel: string }) {
+export function GoalRail({ cards, period }: { cards: GoalCard[]; period: ResolvedPeriod }) {
   return (
     <section aria-label="Goal Rail" className="mb-3">
-      <div className="flex justify-between items-baseline mb-[6px]">
+      <div className="flex justify-between items-center mb-[6px]">
         <span className="text-[8px] tracking-[0.1em] text-[#475569]">GOAL RAIL</span>
-        <span className="text-[8px] tracking-[0.1em] text-[#475569]">{periodLabel}</span>
+        <DashboardPeriodPicker current={period.key} label={period.label} />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-[6px]">
         {cards.map((c) => <GoalCardCell key={c.id} card={c} />)}
