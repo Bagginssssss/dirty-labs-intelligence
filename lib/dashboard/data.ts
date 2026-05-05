@@ -58,29 +58,57 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
   const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
   const monthEnd = `${year}-${m}-${String(lastDay).padStart(2, '0')}`;
 
-  const { data: rows } = await supabaseAdmin
+  type Row = Record<string, unknown>;
+  const sumRows = (arr: Row[], field: string): number =>
+    arr.reduce((acc, r) => acc + (Number(r[field]) || 0), 0);
+
+  // Derived metrics (PPC spend, ROAS, MER, S&S, NTB fallback)
+  const { data: dmdRows } = await supabaseAdmin
     .from('derived_metrics_daily')
-    .select('total_revenue, total_ppc_spend, total_ppc_sales, total_orders, ntb_orders, ss_revenue, metric_date')
+    .select('total_revenue, total_ppc_spend, total_ppc_sales, ntb_orders, ss_revenue, metric_date')
     .eq('brand_id', BRAND_ID)
     .gte('metric_date', monthStart)
     .lte('metric_date', monthEnd);
 
-  type Row = Record<string, unknown>;
-  const typedRows = (rows ?? []) as unknown as Row[];
+  // Business report: correct AOV denominator is total_order_items (not total_orders)
+  const { data: brRows } = await supabaseAdmin
+    .from('business_report')
+    .select('ordered_product_sales, total_order_items, report_date')
+    .eq('brand_id', BRAND_ID)
+    .gte('report_date', monthStart)
+    .lte('report_date', monthEnd);
 
-  const sum = (field: string): number =>
-    typedRows.reduce((acc, r) => acc + (Number(r[field]) || 0), 0);
+  // Brand Analytics NTB — try BA source first; fall back to derived PPC NTB
+  const { data: baRows } = await supabaseAdmin
+    .from('brand_analytics_customer_loyalty')
+    .select('new_to_brand_customers, report_date')
+    .eq('brand_id', BRAND_ID)
+    .gte('report_date', monthStart)
+    .lte('report_date', monthEnd);
 
-  const totalRevenue  = sum('total_revenue');
-  const totalSpend    = sum('total_ppc_spend');
-  const totalPpcSales = sum('total_ppc_sales');
-  const totalOrders   = sum('total_orders');
-  const totalNtb      = sum('ntb_orders');
-  const ssRevenue     = sum('ss_revenue');
+  const typedDmd = (dmdRows ?? []) as unknown as Row[];
+  const typedBr  = (brRows  ?? []) as unknown as Row[];
+  const typedBa  = (baRows  ?? []) as unknown as Row[];
+
+  const totalRevenue  = sumRows(typedDmd, 'total_revenue');
+  const totalSpend    = sumRows(typedDmd, 'total_ppc_spend');
+  const totalPpcSales = sumRows(typedDmd, 'total_ppc_sales');
+  const ssRevenue     = sumRows(typedDmd, 'ss_revenue');
+
+  // AOV: sum(ordered_product_sales) / sum(total_order_items) from business_report
+  const totalSales = sumRows(typedBr, 'ordered_product_sales');
+  const totalItems = sumRows(typedBr, 'total_order_items');
+  const actualAov  = totalItems > 0 ? totalSales / totalItems : null;
+
+  // NTB: prefer BA source; fall back to derived PPC NTB
+  const baNtb      = sumRows(typedBa, 'new_to_brand_customers');
+  const derivedNtb = sumRows(typedDmd, 'ntb_orders');
+  const useBaSource = typedBa.length > 0 && baNtb > 0;
+  const totalNtb    = useBaSource ? baNtb : derivedNtb;
+  const ntbSourceTag = useBaSource ? 'BA' : 'BA pending';
 
   const actualRoas = totalSpend > 0 ? totalPpcSales / totalSpend : null;
   const actualMer  = totalSpend > 0 ? totalRevenue  / totalSpend : null;
-  const actualAov  = totalOrders > 0 ? totalRevenue / totalOrders : null;
   const actualCac  = totalNtb > 0   ? totalSpend   / totalNtb    : null;
 
   const salesTarget = getMonthlyTarget('sales', year, monthIndex);
@@ -99,7 +127,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       : null;
 
   const freshnessDate = period.end;
-  const hasData = typedRows.length > 0;
+  const hasData = typedDmd.length > 0;
 
   const penetration = totalRevenue > 0 ? ssRevenue / totalRevenue : null;
   const ssVariance: number | string | null =
@@ -156,19 +184,20 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       label: 'NTB CUSTOMERS',
       value: hasData ? fmtIntCompact(totalNtb) : '—',
       target: ntbTarget !== null ? fmtIntCompact(ntbTarget) : '—',
-      variance: varPct(totalNtb, ntbTarget),
-      pacing: pace(totalNtb, ntbTarget),
+      variance: useBaSource ? varPct(totalNtb, ntbTarget) : null,
+      pacing:   useBaSource ? pace(totalNtb, ntbTarget)   : null,
       freshnessDate,
-      sourceTag: 'BA pending',
+      sourceTag: ntbSourceTag,
     },
     {
       id: 'cac',
       label: 'CAC',
       value: actualCac !== null ? fmtUSD(actualCac, 2) : '—',
       target: fmtUSD(CAC_TARGET, 2),
-      variance: varPct(actualCac, CAC_TARGET),
-      pacing: pace(actualCac, CAC_TARGET),
+      variance: useBaSource ? varPct(actualCac, CAC_TARGET) : null,
+      pacing:   useBaSource ? pace(actualCac, CAC_TARGET)   : null,
       freshnessDate,
+      sourceTag: useBaSource ? undefined : 'BA pending',
     },
     {
       id: 'ss_revenue',
