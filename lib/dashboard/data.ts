@@ -39,6 +39,7 @@ import { getAccountSummary } from '@/lib/queries/account';
 import { getCampaignsByAdType } from '@/lib/queries/campaigns';
 import { getHarvestCandidates } from '@/lib/queries/keywords';
 import { getAnomalies } from '@/lib/queries/anomalies';
+import { getASINPerformance } from '@/lib/queries/products';
 import { shortName, ASIN_NAMES } from './asin-names';
 // TODO[wire]: replace with real exports from your existing query layer.
 // import { getAccountSummary, getCampaignsByAdType, getHarvestCandidates } from '@/lib/queries/account';
@@ -429,35 +430,315 @@ async function loadAlerts(period: ResolvedPeriod): Promise<{ alerts: Alert[]; su
 /* -------------------------------------------------------------------------- */
 
 async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealthData> {
-  // TODO[wire]: smartscout_subcategory_products / _brands, business_report,
-  // subscribe_and_save, virtual_bundle_sales.
+  const endDate   = period.end;
+  const startDate = period.start;
 
-  const subcategoryRanks: SubcategoryRankRow[] = [
-    { key: 'dishwasher',    label: 'Dishwasher Detergent',   rank: null, revenuePerMonth: null, topAsins: [], snapshotDate: period.end },
-    { key: 'laundry',       label: 'Laundry Detergent',      rank: null, revenuePerMonth: null, topAsins: [], snapshotDate: period.end },
-    { key: 'stain_remover', label: 'Laundry Stain Remover',  rank: null, revenuePerMonth: null, topAsins: [], snapshotDate: period.end },
-    { key: 'toilet',        label: 'Toilet Bowl Cleaner',    rank: null, revenuePerMonth: null, topAsins: [], snapshotDate: period.end },
+  // ── 5E: 90-day bundle window ───────────────────────────────────────────────
+  const bundleEndMs    = new Date(endDate + 'T00:00:00Z').getTime();
+  const bundleStartMs  = bundleEndMs - 90 * 86_400_000;
+  const bundleStartStr = new Date(bundleStartMs).toISOString().slice(0, 10);
+
+  // Prior 90-day for shareOfTotalChange
+  const prior90EndStr   = new Date(bundleStartMs - 86_400_000).toISOString().slice(0, 10);
+  const prior90StartStr = new Date(bundleStartMs - 91 * 86_400_000).toISOString().slice(0, 10);
+
+  // WoW: last 7 days (within 90-day window) vs prior 7 days before that
+  const lastWeekStartStr  = new Date(bundleEndMs - 7 * 86_400_000).toISOString().slice(0, 10);
+  const priorWeekStartStr = new Date(bundleEndMs - 14 * 86_400_000).toISOString().slice(0, 10);
+  const priorWeekEndStr   = new Date(bundleEndMs - 8 * 86_400_000).toISOString().slice(0, 10);
+
+  // ── 5D: prior month range ──────────────────────────────────────────────────
+  const periodYear  = Number(startDate.slice(0, 4));
+  const periodMonth = Number(startDate.slice(5, 7));
+  const priorYear   = periodMonth === 1 ? periodYear - 1 : periodYear;
+  const priorMonth  = periodMonth === 1 ? 12 : periodMonth - 1;
+  const priorMonthStart = `${priorYear}-${String(priorMonth).padStart(2, '0')}-01`;
+  const priorMonthEnd   = new Date(Date.UTC(periodYear, periodMonth - 1, 0)).toISOString().slice(0, 10);
+
+  const [
+    scProductsRes,
+    scBrandsRes,
+    asinPerf,
+    ssCurrentRes,
+    ssPriorRes,
+    bundleCurrentRes,
+    bundlePriorWeekRes,
+    bundlePrior90Res,
+    br90Res,
+    brPrior90Res,
+    dmdRes,
+    dmdPriorRes,
+  ] = await Promise.all([
+
+    // 5A: Dirty Labs products only
+    supabaseAdmin
+      .from('smartscout_subcategory_products')
+      .select('asin, subcategory, primary_subcategory_rank, est_monthly_revenue, snapshot_date')
+      .eq('brand_id', BRAND_ID)
+      .ilike('brand_name', '%dirty labs%')
+      .order('snapshot_date', { ascending: false }),
+
+    // 5B: All brands at latest snapshot
+    supabaseAdmin
+      .from('smartscout_subcategory_brands')
+      .select('brand_name, market_share, market_share_change, snapshot_date')
+      .eq('brand_id', BRAND_ID)
+      .order('snapshot_date', { ascending: false })
+      .limit(200),
+
+    // 5C: CVR/Buy Box via existing helper
+    getASINPerformance(BRAND_ID, startDate, endDate),
+
+    // 5D: S&S current month
+    supabaseAdmin
+      .from('subscribe_and_save')
+      .select('active_subscriptions, ss_revenue')
+      .eq('brand_id', BRAND_ID)
+      .gte('report_date', startDate)
+      .lte('report_date', endDate),
+
+    // 5D: S&S prior month (for MoM)
+    supabaseAdmin
+      .from('subscribe_and_save')
+      .select('active_subscriptions, ss_revenue')
+      .eq('brand_id', BRAND_ID)
+      .gte('report_date', priorMonthStart)
+      .lte('report_date', priorMonthEnd),
+
+    // 5E: Bundles 90-day window (includes sale_date for WoW split)
+    supabaseAdmin
+      .from('virtual_bundle_sales')
+      .select('bundles_sold, total_sales_usd, sale_date')
+      .eq('brand_id', BRAND_ID)
+      .gte('sale_date', bundleStartStr)
+      .lte('sale_date', endDate),
+
+    // 5E: Bundles prior week (WoW comparison)
+    supabaseAdmin
+      .from('virtual_bundle_sales')
+      .select('bundles_sold, total_sales_usd')
+      .eq('brand_id', BRAND_ID)
+      .gte('sale_date', priorWeekStartStr)
+      .lte('sale_date', priorWeekEndStr),
+
+    // 5E: Bundles prior 90-day (shareOfTotalChange)
+    supabaseAdmin
+      .from('virtual_bundle_sales')
+      .select('bundles_sold, total_sales_usd')
+      .eq('brand_id', BRAND_ID)
+      .gte('sale_date', prior90StartStr)
+      .lte('sale_date', prior90EndStr),
+
+    // 5E: Business report total for 90-day (shareOfTotal denominator)
+    supabaseAdmin
+      .from('business_report')
+      .select('ordered_product_sales')
+      .eq('brand_id', BRAND_ID)
+      .gte('report_date', bundleStartStr)
+      .lte('report_date', endDate),
+
+    // 5E: Business report prior 90-day (shareOfTotalChange denominator)
+    supabaseAdmin
+      .from('business_report')
+      .select('ordered_product_sales')
+      .eq('brand_id', BRAND_ID)
+      .gte('report_date', prior90StartStr)
+      .lte('report_date', prior90EndStr),
+
+    // 5D: DMD total_revenue for penetration
+    supabaseAdmin
+      .from('derived_metrics_daily')
+      .select('total_revenue')
+      .eq('brand_id', BRAND_ID)
+      .gte('metric_date', startDate)
+      .lte('metric_date', endDate),
+
+    // 5D: DMD prior month (penetration MoM denominator)
+    supabaseAdmin
+      .from('derived_metrics_daily')
+      .select('total_revenue')
+      .eq('brand_id', BRAND_ID)
+      .gte('metric_date', priorMonthStart)
+      .lte('metric_date', priorMonthEnd),
+  ]);
+
+  // ── 5A: Subcategory Rank ────────────────────────────────────────────────────
+  function toSubcatKey(sc: string): SubcategoryRankRow['key'] | null {
+    const lower = sc.toLowerCase();
+    if (lower.includes('dishwasher')) return 'dishwasher';
+    if (lower.includes('stain'))      return 'stain_remover';
+    if (lower.includes('laundry'))    return 'laundry';
+    if (lower.includes('toilet'))     return 'toilet';
+    return null;
+  }
+
+  type ScProdRow = {
+    asin: string; subcategory: string;
+    primary_subcategory_rank: number | null;
+    est_monthly_revenue: number | null;
+    snapshot_date: string;
+  };
+  const scProds = (scProductsRes.data ?? []) as unknown as ScProdRow[];
+
+  const scByKey = new Map<SubcategoryRankRow['key'], ScProdRow[]>();
+  for (const row of scProds) {
+    const key = toSubcatKey(row.subcategory);
+    if (!key) continue;
+    if (!scByKey.has(key)) scByKey.set(key, []);
+    scByKey.get(key)!.push(row);
+  }
+
+  const SC_DEFS: Array<{ key: SubcategoryRankRow['key']; label: string }> = [
+    { key: 'dishwasher',    label: 'Dishwasher Detergent'  },
+    { key: 'laundry',       label: 'Laundry Detergent'     },
+    { key: 'stain_remover', label: 'Laundry Stain Remover' },
+    { key: 'toilet',        label: 'Toilet Bowl Cleaner'   },
   ];
+
+  const subcategoryRanks: SubcategoryRankRow[] = SC_DEFS.map(({ key, label }) => {
+    const rows = scByKey.get(key) ?? [];
+    if (rows.length === 0) return { key, label, rank: null, revenuePerMonth: null, topAsins: [], snapshotDate: endDate };
+
+    const latestDate = rows[0].snapshot_date;
+    const latest = rows.filter(r => r.snapshot_date === latestDate);
+
+    const rank = latest.reduce((best: number | null, r) => {
+      const rk = r.primary_subcategory_rank;
+      if (rk == null) return best;
+      return best == null ? rk : Math.min(best, rk);
+    }, null);
+
+    const revenuePerMonth = latest.reduce((s, r) => s + (Number(r.est_monthly_revenue) || 0), 0);
+
+    const topAsins = latest
+      .sort((a, b) => (Number(b.est_monthly_revenue) || 0) - (Number(a.est_monthly_revenue) || 0))
+      .slice(0, 3)
+      .map(r => shortName(r.asin));
+
+    return { key, label, rank, revenuePerMonth, topAsins, snapshotDate: latestDate };
+  });
+
+  // ── 5B: Market Share ────────────────────────────────────────────────────────
+  // Note: smartscout_subcategory_brands has no subcategory column — all ingested
+  // data is for Dishwasher Detergent. Laundry and Stain Remover views are empty
+  // until those subcategories are exported from SmartScout.
+  type ScBrandRow = {
+    brand_name: string;
+    market_share: number | null;
+    market_share_change: number | null;
+    snapshot_date: string;
+  };
+  const scBrands = (scBrandsRes.data ?? []) as unknown as ScBrandRow[];
+
+  const latestBrandSnap = scBrands[0]?.snapshot_date ?? endDate;
+  const dishwasherBrands = scBrands
+    .filter(r => r.snapshot_date === latestBrandSnap)
+    .sort((a, b) => (Number(b.market_share) || 0) - (Number(a.market_share) || 0))
+    .slice(0, 6)
+    .map(r => ({
+      brand: r.brand_name,
+      share: Number(r.market_share) || 0,
+      mom: r.market_share_change !== null ? Number(r.market_share_change) : null,
+      isOurs: r.brand_name.toLowerCase().includes('dirty labs'),
+    }));
 
   const marketShare: MarketShareView[] = [
-    { subcategory: 'dishwasher',    label: 'Dishwasher',     rows: [], snapshotDate: period.end },
-    { subcategory: 'laundry',       label: 'Laundry',        rows: [], snapshotDate: period.end },
-    { subcategory: 'stain_remover', label: 'Stain Remover',  rows: [], snapshotDate: period.end },
+    { subcategory: 'dishwasher',    label: 'Dishwasher',    rows: dishwasherBrands, snapshotDate: latestBrandSnap },
+    { subcategory: 'laundry',       label: 'Laundry',       rows: [],               snapshotDate: endDate },
+    { subcategory: 'stain_remover', label: 'Stain Remover', rows: [],               snapshotDate: endDate },
   ];
 
-  const cvrBuyBox: CVRBuyBoxRow[] = [];
+  // ── 5C: CVR / Buy Box ───────────────────────────────────────────────────────
+  const knownPerf = asinPerf.filter(r => r.asin in ASIN_NAMES).slice(0, 6);
 
-  const ss: SSCards = {
-    activeSubs: 0, activeSubsMoM: null,
-    ssRevenue: 0, ssRevenueMoM: null,
-    penetration: null, penetrationMoM: null,
-  };
+  const brandTotalSessions = knownPerf.reduce((s, r) => s + r.sessions, 0);
+  const brandTotalOrders   = knownPerf.reduce((s, r) => s + r.units_ordered, 0);
+  const brandAvgCvr        = brandTotalSessions > 0 ? brandTotalOrders / brandTotalSessions : null;
+
+  const cvrBuyBox: CVRBuyBoxRow[] = knownPerf.map(r => {
+    const cvr = r.cvr ?? 0;
+    const cvrTrend: CVRBuyBoxRow['cvrTrend'] =
+      brandAvgCvr === null || brandAvgCvr === 0 ? 'average'
+      : cvr > brandAvgCvr * 1.2 ? 'above'
+      : cvr < brandAvgCvr * 0.8 ? 'below'
+      : 'average';
+    return { asinShortName: shortName(r.asin), asin: r.asin, cvr, cvrTrend, buyBox: r.buy_box_pct ?? 0 };
+  });
+
+  // ── 5D: Subscribe & Save ────────────────────────────────────────────────────
+  type SsAggRow = { active_subscriptions: number | null; ss_revenue: number | null };
+  const ssCurRows   = (ssCurrentRes.data ?? []) as unknown as SsAggRow[];
+  const ssPriorRows = (ssPriorRes.data   ?? []) as unknown as SsAggRow[];
+
+  const activeSubs  = ssCurRows.reduce((s, r) => s + (Number(r.active_subscriptions) || 0), 0);
+  const ssRevenue   = ssCurRows.reduce((s, r) => s + (Number(r.ss_revenue) || 0), 0);
+  const priorSubs   = ssPriorRows.reduce((s, r) => s + (Number(r.active_subscriptions) || 0), 0);
+  const priorSsRev  = ssPriorRows.reduce((s, r) => s + (Number(r.ss_revenue) || 0), 0);
+
+  const hasPriorSs    = ssPriorRows.length > 0;
+  const activeSubsMoM = hasPriorSs && priorSubs > 0 ? (activeSubs - priorSubs) / priorSubs : null;
+  const ssRevenueMoM  = hasPriorSs && priorSsRev > 0 ? (ssRevenue - priorSsRev) / priorSsRev : null;
+
+  type DmdRevRow = { total_revenue: number | null };
+  const totalRevenue  = ((dmdRes.data   ?? []) as unknown as DmdRevRow[]).reduce((s, r) => s + (Number(r.total_revenue) || 0), 0);
+  const priorTotalRev = ((dmdPriorRes.data ?? []) as unknown as DmdRevRow[]).reduce((s, r) => s + (Number(r.total_revenue) || 0), 0);
+
+  const penetration     = totalRevenue > 0 ? ssRevenue / totalRevenue : null;
+  const priorPenetration = priorTotalRev > 0 && priorSsRev > 0 ? priorSsRev / priorTotalRev : null;
+  const penetrationMoM  = penetration !== null && priorPenetration !== null
+    ? penetration - priorPenetration : null;
+
+  const ss: SSCards = { activeSubs, activeSubsMoM, ssRevenue, ssRevenueMoM, penetration, penetrationMoM };
+
+  // ── 5E: Bundle Performance ──────────────────────────────────────────────────
+  // virtual_bundle_sales data currently ends 2024-01-29; 90-day window
+  // ending period.end is empty for 2026 periods until new data is ingested.
+  type BundleCurRow = { bundles_sold: number | null; total_sales_usd: number | null; sale_date: string };
+  type BundleSumRow = { bundles_sold: number | null; total_sales_usd: number | null };
+
+  const bundleCur     = (bundleCurrentRes.data  ?? []) as unknown as BundleCurRow[];
+  const bundlePriorWk = (bundlePriorWeekRes.data ?? []) as unknown as BundleSumRow[];
+  const bundlePrior90 = (bundlePrior90Res.data  ?? []) as unknown as BundleSumRow[];
+
+  const bundleRevenue = bundleCur.reduce((s, r) => s + (Number(r.total_sales_usd) || 0), 0);
+  const bundleUnits   = bundleCur.reduce((s, r) => s + (Number(r.bundles_sold) || 0), 0);
+
+  const lastWkRev = bundleCur
+    .filter(r => r.sale_date >= lastWeekStartStr)
+    .reduce((s, r) => s + (Number(r.total_sales_usd) || 0), 0);
+  const priorWkRev = bundlePriorWk.reduce((s, r) => s + (Number(r.total_sales_usd) || 0), 0);
+  const lastWkUnits = bundleCur
+    .filter(r => r.sale_date >= lastWeekStartStr)
+    .reduce((s, r) => s + (Number(r.bundles_sold) || 0), 0);
+  const priorWkUnits = bundlePriorWk.reduce((s, r) => s + (Number(r.bundles_sold) || 0), 0);
+
+  const revenueWoW = priorWkRev  > 0 ? (lastWkRev   - priorWkRev)   / priorWkRev   : null;
+  const unitsWoW   = priorWkUnits > 0 ? (lastWkUnits - priorWkUnits) / priorWkUnits : null;
+
+  type BrSumRow = { ordered_product_sales: number | null };
+  const br90Total      = ((br90Res.data      ?? []) as unknown as BrSumRow[]).reduce((s, r) => s + (Number(r.ordered_product_sales) || 0), 0);
+  const brPrior90Total = ((brPrior90Res.data ?? []) as unknown as BrSumRow[]).reduce((s, r) => s + (Number(r.ordered_product_sales) || 0), 0);
+
+  const shareOfTotal      = br90Total > 0 ? bundleRevenue / br90Total : null;
+  const prior90Revenue    = bundlePrior90.reduce((s, r) => s + (Number(r.total_sales_usd) || 0), 0);
+  const priorShareOfTotal = brPrior90Total > 0 ? prior90Revenue / brPrior90Total : null;
+  const shareOfTotalChange = shareOfTotal !== null && priorShareOfTotal !== null
+    ? shareOfTotal - priorShareOfTotal : null;
+
+  // UTC date formatting to avoid timezone day-shift on DST boundaries
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const bsd = new Date(bundleStartMs);
+  const bed = new Date(bundleEndMs);
+  const windowLabel = `${MONTHS[bsd.getUTCMonth()]} ${bsd.getUTCDate()}–${MONTHS[bed.getUTCMonth()]} ${bed.getUTCDate()}`;
 
   const bundles: BundleCards = {
-    revenue: 0, revenueWoW: null,
-    shareOfTotal: null, shareOfTotalChange: null,
-    units: 0, unitsWoW: null,
-    windowLabel: '—',
+    revenue: bundleRevenue,
+    revenueWoW,
+    shareOfTotal,
+    shareOfTotalChange,
+    units: bundleUnits,
+    unitsWoW,
+    windowLabel,
   };
 
   return {
