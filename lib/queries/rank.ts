@@ -64,7 +64,9 @@ export async function getRankMovers(
 
   if (rankRes.error) throw new Error(`getRankMovers failed: ${rankRes.error.message}`)
 
-  // Group by (asin_id, keyword) — keep first and last date
+  const SENTINEL = 98 // rank_value=98 means "97+" (off-page); exclude from delta math
+
+  // Group by (asin_id, keyword) — track first and last NON-sentinel rank
   const acc = new Map<string, {
     asin_id: string; keyword: string; search_volume: number | null
     rv_start: number | null; rv_end: number | null
@@ -72,29 +74,34 @@ export async function getRankMovers(
 
   for (const row of (rankRes.data ?? [])) {
     const key = `${row.asin_id}::${row.keyword}`
+    const rv = row.rank_value !== null ? Number(row.rank_value) : null
+    const isReal = rv !== null && rv !== SENTINEL
 
     if (!acc.has(key)) {
       acc.set(key, {
         asin_id:       row.asin_id as string,
         keyword:       row.keyword as string,
         search_volume: row.search_volume !== null ? Number(row.search_volume) : null,
-        rv_start:      row.rank_value !== null ? Number(row.rank_value) : null,
-        rv_end:        row.rank_value !== null ? Number(row.rank_value) : null,
+        rv_start:      isReal ? rv : null,
+        rv_end:        isReal ? rv : null,
       })
     } else {
-      // Rows are ordered by date — update "end" values as we go
       const a = acc.get(key)!
-      a.rv_end = row.rank_value !== null ? Number(row.rank_value) : null
+      if (isReal) {
+        // First non-sentinel chronologically becomes rv_start; every non-sentinel updates rv_end
+        if (a.rv_start === null) a.rv_start = rv
+        a.rv_end = rv
+      }
       if (row.search_volume !== null) a.search_volume = Number(row.search_volume)
     }
   }
 
   return Array.from(acc.values())
+    // Discard keywords whose only readings in the period were sentinel — no real baseline
+    .filter(a => a.rv_start !== null && a.rv_end !== null)
     .map(a => {
       const meta = asinMap.get(a.asin_id)
-      const rvDelta = (a.rv_start !== null && a.rv_end !== null)
-        ? a.rv_start - a.rv_end  // positive = improved (lower rank number)
-        : null
+      const rvDelta = a.rv_start! - a.rv_end!  // positive = improved (lower rank number)
 
       return {
         keyword:          a.keyword,
@@ -107,6 +114,6 @@ export async function getRankMovers(
         search_volume:    a.search_volume,
       }
     })
-    .filter(r => r.rank_value_delta !== null && Math.abs(r.rank_value_delta) >= minDelta)
-    .sort((a, b) => Math.abs(b.rank_value_delta ?? 0) - Math.abs(a.rank_value_delta ?? 0))
+    .filter(r => Math.abs(r.rank_value_delta) >= minDelta)
+    .sort((a, b) => Math.abs(b.rank_value_delta) - Math.abs(a.rank_value_delta))
 }
