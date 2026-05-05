@@ -631,16 +631,19 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
   const scBrands = (scBrandsRes.data ?? []) as unknown as ScBrandRow[];
 
   const latestBrandSnap = scBrands[0]?.snapshot_date ?? endDate;
-  const dishwasherBrands = scBrands
+  const latestBrandsAll = scBrands
     .filter(r => r.snapshot_date === latestBrandSnap)
-    .sort((a, b) => (Number(b.market_share) || 0) - (Number(a.market_share) || 0))
-    .slice(0, 6)
-    .map(r => ({
-      brand: r.brand_name,
-      share: Number(r.market_share) || 0,
-      mom: r.market_share_change !== null ? Number(r.market_share_change) : null,
-      isOurs: r.brand_name.toLowerCase().includes('dirty labs'),
-    }));
+    .sort((a, b) => (Number(b.market_share) || 0) - (Number(a.market_share) || 0));
+  const top5       = latestBrandsAll.slice(0, 5);
+  const dlRow      = latestBrandsAll.find(r => r.brand_name.toLowerCase().includes('dirty labs'));
+  const dlInTop5   = top5.some(r => r.brand_name.toLowerCase().includes('dirty labs'));
+  // Always show Dirty Labs — append as 6th row if not already in top 5
+  const dishwasherBrands = [...top5, ...(dlInTop5 || !dlRow ? [] : [dlRow])].map(r => ({
+    brand: r.brand_name,
+    share: Number(r.market_share) || 0,
+    mom: r.market_share_change !== null ? Number(r.market_share_change) : null,
+    isOurs: r.brand_name.toLowerCase().includes('dirty labs'),
+  }));
 
   const marketShare: MarketShareView[] = [
     { subcategory: 'dishwasher',    label: 'Dishwasher',    rows: dishwasherBrands, snapshotDate: latestBrandSnap },
