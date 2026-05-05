@@ -1,65 +1,63 @@
-import Image from "next/image";
+import { Header } from '@/components/dashboard/Header';
+import { ChatPanel } from '@/components/dashboard/ChatPanel';
+import { AgentAlerts } from '@/components/dashboard/AgentAlerts';
+import { GoalRail } from '@/components/dashboard/GoalRail';
+import { BusinessHealth } from '@/components/dashboard/BusinessHealth';
+import { PPCAtAGlance } from '@/components/dashboard/PPCAtAGlance';
+import { SearchIntelligence } from '@/components/dashboard/SearchIntelligence';
+import { Footer } from '@/components/dashboard/Footer';
+import { resolvePeriod } from '@/lib/dashboard/period';
+import { BRAND_ID, loadDashboardData } from '@/lib/dashboard/data';
 
-export default function Home() {
+export const dynamic = 'force-dynamic';
+
+type SearchParams = Promise<{ period?: string }>;
+
+export default async function CommandCenter({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = await searchParams;
+  const today = new Date();
+  const period = resolvePeriod(params.period, today);
+  const data = await loadDashboardData(period);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-[#111113] text-[#e2e8f0] antialiased font-mono">
+      <Header period={period} today={today} />
+
+      {data.period.fellBack && (
+        <div className="mx-auto max-w-[1600px] px-4 pt-3">
+          <div className="text-[8px] uppercase tracking-[0.1em] text-[#f59e0b] bg-[#f59e0b]/10 border border-[#f59e0b]/30 rounded-sm px-2 py-1 inline-block">
+            No data for {data.period.label} — showing {data.period.effectiveLabel}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      )}
+
+      <div className="mx-auto max-w-[1600px] px-4 pt-3">
+        <ChatPanel brandId={BRAND_ID} />
+      </div>
+
+      <div className="mx-auto max-w-[1600px] px-4">
+        <AgentAlerts alerts={data.alerts} summary={data.alertSummary} />
+      </div>
+
+      <div className="mx-auto max-w-[1600px] px-4">
+        <GoalRail cards={data.goals} periodLabel={data.period.effectiveLabel} />
+      </div>
+
+      <section className="mx-auto max-w-[1600px] px-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-[9px]">
+          <BusinessHealth data={data.businessHealth} periodLabel={data.period.effectiveLabel} />
+          <PPCAtAGlance data={data.ppc} periodLabel={data.period.effectiveLabel} />
+          <SearchIntelligence data={data.search} />
         </div>
-      </main>
+      </section>
+
+      <div className="mx-auto max-w-[1600px] px-4">
+        <Footer status={data.status} />
+      </div>
     </div>
   );
 }
