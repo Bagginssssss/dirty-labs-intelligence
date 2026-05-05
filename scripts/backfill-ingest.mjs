@@ -55,7 +55,7 @@ if (files.length === 0) {
 }
 
 const total = files.length
-console.log(`Found ${total} CSV file(s) in "${dir}". Starting ingest…\n`)
+console.log(`Found ${total} CSV file(s) in "${dir}". Files without __YYYY-MM will be skipped.\n`)
 
 // ── Ingest loop ──────────────────────────────────────────────────────────────
 
@@ -69,6 +69,31 @@ for (let i = 0; i < files.length; i++) {
   const name     = basename(filePath)
   const prefix   = `[${i + 1}/${total}]`
 
+  // ── Parse period from filename ────────────────────────────────────────────
+  // Required: __YYYY-MM.csv suffix. Mappers that derive dates from CSV rows
+  // (sp_campaign, search_term, business_report_daily) ignore these fields;
+  // the monthly business_report mapper needs date_range_start to set
+  // report_date because the by-ASIN export has no date column.
+  const periodMatch = name.match(/__(\d{4})-(\d{2})\.csv$/)
+  if (!periodMatch) {
+    process.stderr.write(`SKIP  ${name} — no __YYYY-MM period in filename\n`)
+    failures++
+    failed.push(name)
+    continue
+  }
+  const year  = parseInt(periodMatch[1], 10)
+  const month = parseInt(periodMatch[2], 10)
+  if (month < 1 || month > 12) {
+    process.stderr.write(`SKIP  ${name} — month ${month} out of range\n`)
+    failures++
+    failed.push(name)
+    continue
+  }
+  const dateStart = `${year}-${String(month).padStart(2, '0')}-01`
+  // Day 0 of next month = last day of this month (JS Date months are 0-indexed).
+  const lastDay   = new Date(year, month, 0).getDate()
+  const dateEnd   = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
+
   let result
   try {
     const fileContent = readFileSync(filePath)
@@ -77,8 +102,8 @@ for (let i = 0; i < files.length; i++) {
     const form = new FormData()
     form.append('file', blob, name)
     form.append('brand_id', BRAND_ID)
-    // date_range_start / date_range_end left empty — ingest handler treats
-    // them as optional metadata; report date is derived from CSV content.
+    form.append('date_range_start', dateStart)
+    form.append('date_range_end', dateEnd)
 
     const res = await fetch(`${BASE_URL}/api/ingest`, {
       method: 'POST',
