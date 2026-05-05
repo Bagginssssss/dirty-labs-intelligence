@@ -662,7 +662,8 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
       : cvr > brandAvgCvr * 1.2 ? 'above'
       : cvr < brandAvgCvr * 0.8 ? 'below'
       : 'average';
-    return { asinShortName: shortName(r.asin), asin: r.asin, cvr, cvrTrend, buyBox: r.buy_box_pct ?? 0 };
+    // buy_box_pct stored as percentage (99.18), component expects decimal (0..1)
+    return { asinShortName: shortName(r.asin), asin: r.asin, cvr, cvrTrend, buyBox: (r.buy_box_pct ?? 0) / 100 };
   });
 
   // ── 5D: Subscribe & Save ────────────────────────────────────────────────────
