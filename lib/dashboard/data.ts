@@ -990,11 +990,12 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
   try {
     const res = await supabaseAdmin
       .from('search_query_performance')
-      .select('search_query, purchases_brand_share, search_query_volume, impressions_total, purchases_total')
+      .select('search_query, purchases_brand_share, search_query_volume, impressions_total, purchases_total, purchases_brand')
       .eq('brand_id', BRAND_ID)
       .gte('report_date', period.start)
       .lte('report_date', period.end)
       .gt('purchases_total', 100)
+      .gt('purchases_brand', 0)
       .lt('purchases_brand_share', 10)
       .not('search_query', 'ilike', '%dirty%')
       .order('purchases_total', { ascending: false, nullsFirst: false })
