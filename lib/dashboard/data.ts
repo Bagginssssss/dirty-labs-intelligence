@@ -469,6 +469,7 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
     brPrior90Res,
     dmdRes,
     dmdPriorRes,
+    bundleLatestDateRes,
   ] = await Promise.all([
 
     // 5A: Dirty Labs products only
@@ -562,6 +563,14 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
       .eq('brand_id', BRAND_ID)
       .gte('metric_date', priorMonthStart)
       .lte('metric_date', priorMonthEnd),
+
+    // 4D: latest sale_date in virtual_bundle_sales (for empty-state message)
+    supabaseAdmin
+      .from('virtual_bundle_sales')
+      .select('sale_date')
+      .eq('brand_id', BRAND_ID)
+      .order('sale_date', { ascending: false })
+      .limit(1),
   ]);
 
   // ── 5A: Subcategory Rank ────────────────────────────────────────────────────
@@ -749,6 +758,15 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
   const bed = new Date(bundleEndMs);
   const windowLabel = `${MONTHS[bsd.getUTCMonth()]} ${bsd.getUTCDate()}–${MONTHS[bed.getUTCMonth()]} ${bed.getUTCDate()}`;
 
+  // Format latest upload date as "Jan 29, 2024" for empty-state copy
+  const rawLatestBundleDate = (bundleLatestDateRes.data?.[0] as { sale_date?: string } | undefined)?.sale_date ?? null;
+  const lastUploadDate: string | null = rawLatestBundleDate
+    ? (() => {
+        const [y, m, d] = rawLatestBundleDate.split('-').map(Number);
+        return `${MONTHS[m - 1]} ${d}, ${y}`;
+      })()
+    : null;
+
   const bundles: BundleCards = {
     revenue: bundleRevenue,
     revenueWoW,
@@ -757,6 +775,7 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
     units: bundleUnits,
     unitsWoW,
     windowLabel,
+    lastUploadDate,
   };
 
   return {

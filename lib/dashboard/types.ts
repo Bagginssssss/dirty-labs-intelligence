@@ -93,6 +93,7 @@ export type BundleCards = {
   units: number;
   unitsWoW: number | null;
   windowLabel: string;
+  lastUploadDate: string | null;
 };
 
 export type BusinessHealthData = {

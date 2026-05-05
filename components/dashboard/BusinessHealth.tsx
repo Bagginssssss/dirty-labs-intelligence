@@ -61,10 +61,16 @@ function SubcategoryRow({ row }: { row: SubcategoryRankRow }) {
         )}
       </div>
       <div className="text-right shrink-0 ml-2">
-        <div className="text-[12px] font-medium text-[#3b82f6] leading-none">{fmtRank(row.rank)}</div>
-        <div className="text-[8px] text-[#475569] mt-[1px]">
-          {row.revenuePerMonth != null ? `${fmtUSDCompact(row.revenuePerMonth, 0)}/mo` : '—'}
-        </div>
+        {row.rank != null ? (
+          <>
+            <div className="text-[12px] font-medium text-[#3b82f6] leading-none">{fmtRank(row.rank)}</div>
+            <div className="text-[8px] text-[#475569] mt-[1px]">
+              {row.revenuePerMonth != null ? `${fmtUSDCompact(row.revenuePerMonth, 0)}/mo` : '—'}
+            </div>
+          </>
+        ) : (
+          <div className="text-[9px] text-[#475569]">Upload report</div>
+        )}
       </div>
     </div>
   );
@@ -77,6 +83,12 @@ function MarketShareSection({
 }) {
   const [active, setActive] = useState<MarketShareView['subcategory']>(defaultKey);
   const view = views.find((v) => v.subcategory === active) ?? views[0];
+
+  // Most recent snapshot date across any view that has data — shown in empty state copy
+  const anySnapshotDate = views.reduce<string | null>((best, v) => {
+    if (v.rows.length > 0 && v.snapshotDate && (!best || v.snapshotDate > best)) return v.snapshotDate;
+    return best;
+  }, null);
 
   return (
     <div>
@@ -96,7 +108,12 @@ function MarketShareSection({
         ))}
       </div>
       {!view || view.rows.length === 0 ? (
-        <div className="text-[9px] text-[#475569] italic">No share data.</div>
+        <div>
+          <div className="text-[9px] text-[#475569]">Upload report</div>
+          {anySnapshotDate && (
+            <div className="text-[8px] text-[#2a2a3a] mt-[1px]">as of {anySnapshotDate}</div>
+          )}
+        </div>
       ) : (
         view.rows.slice(0, 6).map((r) => <MarketShareBar key={r.brand} row={r} />)
       )}
@@ -178,14 +195,15 @@ function CVRRow({ row }: { row: CVRBuyBoxRow }) {
 function SSGrid({ cards }: { cards: SSCards }) {
   return (
     <div className="grid grid-cols-3 gap-[5px] mt-1">
-      <MiniCard label="Active subs"  value={cards.activeSubs ? fmtIntCompact(cards.activeSubs) : '—'}    mom={cards.activeSubsMoM}  />
-      <MiniCard label="S&S revenue"  value={cards.ssRevenue ? fmtUSDCompact(cards.ssRevenue) : '—'}        mom={cards.ssRevenueMoM}    />
-      <MiniCard label="Penetration"  value={cards.penetration != null ? fmtPct(cards.penetration) : '—'}  mom={cards.penetrationMoM} stableLabel="→ stable" />
+      <MiniCard label="Active subs"  value={cards.activeSubs ? fmtIntCompact(cards.activeSubs) : '—'}   mom={cards.activeSubsMoM}  nullLabel="first snapshot" nullLabelItalic />
+      <MiniCard label="S&S revenue"  value={cards.ssRevenue ? fmtUSDCompact(cards.ssRevenue) : '—'}       mom={cards.ssRevenueMoM}   nullLabel="first snapshot" nullLabelItalic />
+      <MiniCard label="Penetration"  value={cards.penetration != null ? fmtPct(cards.penetration) : '—'} mom={cards.penetrationMoM} nullLabel="first snapshot" nullLabelItalic />
     </div>
   );
 }
 
 function BundlesGrid({ cards }: { cards: BundleCards }) {
+  const isEmpty = cards.revenue === 0 && cards.units === 0;
   return (
     <div className="grid grid-cols-3 gap-[5px] mt-1">
       <MiniCard label="Revenue"     value={cards.revenue ? fmtUSDCompact(cards.revenue) : '—'} mom={cards.revenueWoW} momLabel="WoW" />
@@ -197,24 +215,31 @@ function BundlesGrid({ cards }: { cards: BundleCards }) {
         momIsPoints
       />
       <MiniCard label="Units sold"  value={cards.units ? fmtIntCompact(cards.units) : '—'} mom={cards.unitsWoW} momLabel="WoW" />
+      {isEmpty && (
+        <div className="col-span-3 text-[8px] text-[#475569] mt-[2px]">
+          No bundle activity in 90-day window{cards.lastUploadDate ? ` · last upload ${cards.lastUploadDate}` : ''}.
+        </div>
+      )}
     </div>
   );
 }
 
 function MiniCard({
-  label, value, mom, momLabel = 'MoM', momIsPoints, stableLabel,
+  label, value, mom, momLabel = 'MoM', momIsPoints, nullLabel, nullLabelItalic,
 }: {
   label: string; value: string;
   mom?: number | null;
   momLabel?: string;
   momIsPoints?: boolean;
-  stableLabel?: string;
+  nullLabel?: string;
+  nullLabelItalic?: boolean;
 }) {
   let momText = '';
   let momTone = 'text-[#64748b]';
+  let momItalic = false;
   if (mom == null) {
-    momText = stableLabel ?? '';
-    momTone = 'text-[#64748b]';
+    momText = nullLabel ?? '';
+    momItalic = !!nullLabelItalic;
   } else {
     const sign = mom > 0 ? '+' : '';
     const num = momIsPoints ? mom.toFixed(1) : (mom * 100).toFixed(1);
@@ -225,7 +250,9 @@ function MiniCard({
     <div className="bg-[#111113] rounded-[3px] px-[7px] py-[5px]">
       <div className="text-[8px] text-[#475569] mb-[2px]">{label}</div>
       <div className="text-[11px] font-medium text-[#e2e8f0]">{value}</div>
-      {momText && <div className={`text-[8px] mt-[1px] ${momTone}`}>{momText}</div>}
+      {momText && (
+        <div className={`text-[8px] mt-[1px] ${momTone}${momItalic ? ' italic' : ''}`}>{momText}</div>
+      )}
     </div>
   );
 }
