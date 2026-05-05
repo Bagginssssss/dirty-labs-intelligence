@@ -131,7 +131,7 @@ function MarketShareBar({ row }: { row: { brand: string; share: number; mom: num
     : 'text-[#64748b]';
   return (
     <div className="flex items-center gap-[6px] py-[2px]">
-      <span className={`text-[9px] min-w-[76px] ${brandColor}`}>{row.brand}</span>
+      <span className={`text-[9px] w-[140px] shrink-0 truncate ${brandColor}`} title={row.brand}>{row.brand}</span>
       <div className="flex-1 h-[3px] bg-[#1e1e2e] rounded-[2px] overflow-hidden">
         <div className={`h-[3px] rounded-[2px] ${barColor}`} style={{ width: `${Math.max(2, row.share * 100)}%` }} />
       </div>
