@@ -29,6 +29,7 @@ const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   scale_insights_keyword_rank: 'brand_id,asin_id,keyword,report_date',
   scale_insights_bid_log:      'brand_id,campaign_id,target,change_timestamp,bid_before,bid_after',
   business_report:             'brand_id,asin_id,report_date',
+  business_report_daily:       'brand_id,report_date',
   sp_campaign_performance:     'brand_id,campaign_id,report_date,ad_type',
   derived_metrics_daily:       'brand_id,metric_date',
   derived_metrics_weekly:      'brand_id,week_start',

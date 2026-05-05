@@ -29,6 +29,16 @@ export function parseDate(value: string): string | null {
     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0]
   }
 
+  // M/D/YY or MM/DD/YY — Amazon "Sales and Traffic by Date" short-year format.
+  // Explicit construction avoids timezone-dependent new Date() parsing.
+  // Assumes 2000–2099 for 2-digit years.
+  if (/^\d{1,2}\/\d{1,2}\/\d{2}$/.test(trimmed)) {
+    const [m, day, y] = trimmed.split('/')
+    const fullYear = 2000 + parseInt(y, 10)
+    const d = new Date(`${fullYear}-${m.padStart(2, '0')}-${day.padStart(2, '0')}`)
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0]
+  }
+
   // Last resort
   const d = new Date(trimmed)
   if (!isNaN(d.getTime())) return d.toISOString().split('T')[0]

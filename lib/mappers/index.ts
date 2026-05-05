@@ -3,6 +3,7 @@ import { mapSpSearchTerm } from './sp-search-term'
 import { mapSpTargeting } from './sp-targeting'
 import { mapSpCampaignPerformance } from './sp-campaign-performance'
 import { mapBusinessReport } from './business-report'
+import { mapBusinessReportDaily } from './business-report-daily'
 import { mapPurchasedProduct } from './purchased-product'
 import { mapScaleInsightsBidLog } from './scale-insights-bid-log'
 import { mapScaleInsightsKeywordRank } from './scale-insights-keyword-rank'
@@ -26,6 +27,7 @@ const MAPPERS: Record<string, MapperFn> = {
   sp_targeting_report:         mapSpTargeting,
   sp_campaign_performance:     mapSpCampaignPerformance,
   business_report:             mapBusinessReport,
+  business_report_daily:       mapBusinessReportDaily,
   purchased_product_report:    mapPurchasedProduct,
   scale_insights_bid_log:      mapScaleInsightsBidLog,
   scale_insights_keyword_rank: mapScaleInsightsKeywordRank,
@@ -54,6 +56,7 @@ export * from './sp-search-term'
 export * from './sp-targeting'
 export * from './sp-campaign-performance'
 export * from './business-report'
+export * from './business-report-daily'
 export * from './purchased-product'
 export * from './scale-insights-bid-log'
 export * from './scale-insights-keyword-rank'

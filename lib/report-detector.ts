@@ -205,9 +205,23 @@ const SIGNATURES: Array<{
     match: h => has(h, 'competitor_brand') || (has(h, 'estimated_revenue') && has(h, 'market_share')),
   },
   {
+    // Amazon "Sales and Traffic by Date" — brand-level daily totals. Has a "Date"
+    // column; the ASIN-level monthly report does not. Must be checked first so the
+    // daily file never falls through to the monthly business_report signature.
+    reportType: 'business_report_daily',
+    tableName: 'business_report_daily',
+    match: h => has(h, 'date') && has(h, 'sessions') && (has(h, 'buy_box') || has(h, 'page_views')),
+  },
+  {
+    // Amazon "Detail Page Sales and Traffic by Child Item" — ASIN-level monthly.
+    // Tightened to require an ASIN column so it never matches the daily file if
+    // signature ordering ever shifts. "date" check is intentionally absent here.
     reportType: 'business_report',
     tableName: 'business_report',
-    match: h => has(h, 'sessions') && (has(h, 'buy_box') || has(h, 'page_views')),
+    match: h =>
+      has(h, 'sessions') &&
+      (has(h, 'buy_box') || has(h, 'page_views')) &&
+      (has(h, 'child_asin') || has(h, 'parent_asin') || has(h, 'asin')),
   },
   {
     // Guard: lacks 'targeting' and 'match_type' so a targeting report file that
