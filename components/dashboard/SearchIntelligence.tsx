@@ -24,13 +24,10 @@ export function SearchIntelligence({ data }: { data: SearchIntelData }) {
           NTB opportunity
         </span>
       </div>
-      <div className="text-[8px] text-[#475569] mb-[5px] leading-[1.4]">
-        Buyers purchasing at scale — not from Dirty Labs. Highest-value NTB acquisition targets.
-      </div>
       {data.shareGaps.length === 0 ? (
         <div className="text-[9px] text-[#475569] italic">No gap data.</div>
       ) : (
-        data.shareGaps.slice(0, 5).map((q) => <SQPRowItem key={q.query} row={q} tone="critical" />)
+        data.shareGaps.slice(0, 5).map((q) => <SQPRowItem key={q.query} row={q} tone="critical" sharePrecision={2} />)
       )}
 
       <div className="text-[8px] tracking-[0.1em] text-[#3b82f6] mt-[7px] mb-[4px]">
@@ -41,12 +38,12 @@ export function SearchIntelligence({ data }: { data: SearchIntelData }) {
   );
 }
 
-function SQPRowItem({ row, tone }: { row: SQPRow; tone: 'positive' | 'critical' }) {
+function SQPRowItem({ row, tone, sharePrecision = 1 }: { row: SQPRow; tone: 'positive' | 'critical'; sharePrecision?: number }) {
   const shareTone = tone === 'positive' ? 'text-[#10b981]' : 'text-[#ef4444]';
   return (
     <div className="flex justify-between py-[3px] border-b border-[#1e1e2e]/30">
       <span className="text-[9px] text-[#94a3b8] flex-1 truncate">{row.query}</span>
-      <span className={`text-[9px] font-medium min-w-[36px] text-right ${shareTone}`}>{fmtPct(row.purchaseShare, 1)}</span>
+      <span className={`text-[9px] font-medium min-w-[36px] text-right ${shareTone}`}>{fmtPct(row.purchaseShare, sharePrecision)}</span>
       <span className="text-[8px] text-[#475569] min-w-[55px] text-right">{fmtIntCompact(row.searchVolume)}/mo</span>
     </div>
   );

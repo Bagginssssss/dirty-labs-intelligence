@@ -128,6 +128,12 @@ export function CampaignWatchlist({ initial }: { initial: CampaignRow[] }) {
       </table>
 
       <div className="text-[8px] text-[#475569] mt-1">{pinned.size} / {MAX_PINS} pinned</div>
+      <div className="text-[7px] text-[#475569] mt-[3px] leading-[1.6]">
+        <span className="text-[#10b981]">✓ top</span>: ROAS ≥ 5 &nbsp;·&nbsp;
+        <span className="text-[#f59e0b]">watch</span>: ROAS 2–5 &nbsp;·&nbsp;
+        <span className="text-[#ef4444]">⚠ waste</span>: ROAS &lt; 2 &nbsp;·&nbsp;
+        <span className="text-[#475569]">new</span>: &lt;14d, &lt;100 impr
+      </div>
     </div>
   );
 }
