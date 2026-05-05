@@ -106,7 +106,7 @@ export type BusinessHealthData = {
 };
 
 export type PPCStatRow = {
-  id: 'spend' | 'roas' | 'sb_share' | 'harvest' | 'organic';
+  id: 'spend' | 'paid_sales' | 'roas' | 'sb_share' | 'harvest' | 'organic';
   label: string;
   primary: string;
   secondary: string;

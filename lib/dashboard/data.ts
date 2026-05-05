@@ -959,6 +959,13 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
       tone: spendTone,
     },
     {
+      id: 'paid_sales',
+      label: 'Paid sales',
+      primary: totalSales > 0 ? fmtUSDCompact(totalSales) : '—',
+      secondary: acct.total_revenue > 0 ? `${fmtPct(totalSales / acct.total_revenue, 1)} of total` : '— of total',
+      tone: 'neutral',
+    },
+    {
       id: 'roas',
       label: 'Blended ROAS',
       primary: fmtRoas(blendedRoas),
