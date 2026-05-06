@@ -62,29 +62,46 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
   const sumRows = (arr: Row[], field: string): number =>
     arr.reduce((acc, r) => acc + (Number(r[field]) || 0), 0);
 
-  // Derived metrics (PPC spend, ROAS, MER, S&S, NTB fallback)
-  const { data: dmdRows } = await supabaseAdmin
-    .from('derived_metrics_daily')
-    .select('total_revenue, total_ppc_spend, total_ppc_sales, ntb_orders, ss_revenue, metric_date')
-    .eq('brand_id', BRAND_ID)
-    .gte('metric_date', monthStart)
-    .lte('metric_date', monthEnd);
+  const [
+    { data: dmdRows },
+    { data: brRows },
+    { data: baRows },
+    sbGoalRes,
+  ] = await Promise.all([
+    // Derived metrics (PPC spend, ROAS, MER, S&S, NTB fallback)
+    supabaseAdmin
+      .from('derived_metrics_daily')
+      .select('total_revenue, total_ppc_spend, total_ppc_sales, ntb_orders, ss_revenue, metric_date')
+      .eq('brand_id', BRAND_ID)
+      .gte('metric_date', monthStart)
+      .lte('metric_date', monthEnd),
+    // Business report: correct AOV denominator is total_order_items (not total_orders)
+    supabaseAdmin
+      .from('business_report_daily')
+      .select('ordered_product_sales, total_order_items, report_date')
+      .eq('brand_id', BRAND_ID)
+      .gte('report_date', monthStart)
+      .lte('report_date', monthEnd),
+    // Brand Analytics NTB — try BA source first; fall back to derived PPC NTB
+    supabaseAdmin
+      .from('brand_analytics_customer_loyalty')
+      .select('new_to_brand_customers, report_date')
+      .eq('brand_id', BRAND_ID)
+      .gte('report_date', monthStart)
+      .lte('report_date', monthEnd),
+    // Earliest SB/SBV row — used to flag SP-only goal cards when period predates coverage
+    supabaseAdmin
+      .from('sp_campaign_performance')
+      .select('report_date')
+      .eq('brand_id', BRAND_ID)
+      .in('ad_type', ['SB', 'SBV'])
+      .order('report_date', { ascending: true })
+      .limit(1),
+  ]);
 
-  // Business report: correct AOV denominator is total_order_items (not total_orders)
-  const { data: brRows } = await supabaseAdmin
-    .from('business_report_daily')
-    .select('ordered_product_sales, total_order_items, report_date')
-    .eq('brand_id', BRAND_ID)
-    .gte('report_date', monthStart)
-    .lte('report_date', monthEnd);
-
-  // Brand Analytics NTB — try BA source first; fall back to derived PPC NTB
-  const { data: baRows } = await supabaseAdmin
-    .from('brand_analytics_customer_loyalty')
-    .select('new_to_brand_customers, report_date')
-    .eq('brand_id', BRAND_ID)
-    .gte('report_date', monthStart)
-    .lte('report_date', monthEnd);
+  const sbGoalFrom   = (!sbGoalRes.error && (sbGoalRes.data?.[0]?.report_date as string | undefined)) || null;
+  const sbGoalComplete = sbGoalFrom !== null && monthStart >= sbGoalFrom;
+  const spOnlyTag    = sbGoalComplete ? undefined : 'SP only';
 
   const typedDmd = (dmdRows ?? []) as unknown as Row[];
   const typedBr  = (brRows  ?? []) as unknown as Row[];
@@ -151,6 +168,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       variance: varPct(totalSpend, spendTarget),
       pacing: pace(totalSpend, spendTarget),
       freshnessDate,
+      sourceTag: spOnlyTag,
     },
     {
       id: 'ppc_roas',
@@ -160,6 +178,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       variance: varPct(actualRoas, roasTarget),
       pacing: pace(actualRoas, roasTarget),
       freshnessDate,
+      sourceTag: spOnlyTag,
     },
     {
       id: 'mer',
@@ -169,6 +188,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       variance: varPct(actualMer, MER_TARGET),
       pacing: pace(actualMer, MER_TARGET),
       freshnessDate,
+      sourceTag: spOnlyTag,
     },
     {
       id: 'aov',
@@ -879,7 +899,7 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   // Using MIN(report_date) from sp_campaign_performance as launch proxy.
   const cutoff14dDate = new Date(endDate.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
 
-  const [byType, harvest, acct, firstSeenRes] = await Promise.all([
+  const [byType, harvest, acct, firstSeenRes, sbFromRes] = await Promise.all([
     getCampaignsByAdType(BRAND_ID, period.start, period.end),
     getHarvestCandidates(BRAND_ID, period.start, period.end),
     getAccountSummary(BRAND_ID, period.start, period.end),
@@ -888,7 +908,18 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
       .select('campaign_id, report_date')
       .eq('brand_id', BRAND_ID)
       .order('report_date', { ascending: true }),
+    // Earliest SB/SBV row — determines whether this period has full PPC coverage.
+    supabaseAdmin
+      .from('sp_campaign_performance')
+      .select('report_date')
+      .eq('brand_id', BRAND_ID)
+      .in('ad_type', ['SB', 'SBV'])
+      .order('report_date', { ascending: true })
+      .limit(1),
   ]);
+
+  const sbAvailableFrom = (!sbFromRes.error && (sbFromRes.data?.[0]?.report_date as string | undefined)) || null;
+  const sbIsComplete    = sbAvailableFrom !== null && period.start >= sbAvailableFrom;
 
   const spRows  = byType['SP']  ?? [];
   const sbRows  = byType['SB']  ?? [];
@@ -1043,7 +1074,11 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
     .sort((a, b) => b.spend - a.spend)
     .slice(0, 200);
 
-  return { stats, campaigns: watchlist };
+  return {
+    stats,
+    campaigns: watchlist,
+    ppcDataCompleteness: { sbAvailableFrom, isComplete: sbIsComplete },
+  };
 }
 
 /* -------------------------------------------------------------------------- */

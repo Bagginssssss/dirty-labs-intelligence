@@ -127,9 +127,15 @@ export type CampaignRow = {
   pinned?: boolean;
 };
 
+export type PPCDataCompleteness = {
+  sbAvailableFrom: string | null;
+  isComplete: boolean;
+};
+
 export type PPCSnapshot = {
   stats: PPCStatRow[];
   campaigns: CampaignRow[];
+  ppcDataCompleteness: PPCDataCompleteness;
 };
 
 export type SQPRow = {

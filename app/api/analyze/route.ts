@@ -58,10 +58,11 @@ function buildWeeklyBriefingPrompt(data: {
   memoryContext: string
   startDate: string
   endDate: string
+  sbAvailableFrom?: string | null
 }): string {
   return `You are generating the weekly PPC briefing for Dirty Labs.
 
-${DATA_COMPLETENESS_NOTE(1, 14)}
+${DATA_COMPLETENESS_NOTE(1, 14, data.sbAvailableFrom)}
 
 PERIOD: ${data.startDate} to ${data.endDate}
 
@@ -99,10 +100,11 @@ function buildAnomalyPrompt(data: {
   memoryContext: string
   startDate: string
   endDate: string
+  sbAvailableFrom?: string | null
 }): string {
   return `You are running an anomaly detection scan for Dirty Labs.
 
-${DATA_COMPLETENESS_NOTE(1, 14)}
+${DATA_COMPLETENESS_NOTE(1, 14, data.sbAvailableFrom)}
 
 PERIOD: ${data.startDate} to ${data.endDate}
 
@@ -132,10 +134,11 @@ function buildOpportunityPrompt(data: {
   memoryContext: string
   startDate: string
   endDate: string
+  sbAvailableFrom?: string | null
 }): string {
   return `You are running an opportunity analysis for Dirty Labs.
 
-${DATA_COMPLETENESS_NOTE(1, 14)}
+${DATA_COMPLETENESS_NOTE(1, 14, data.sbAvailableFrom)}
 
 PERIOD: ${data.startDate} to ${data.endDate}
 
@@ -179,10 +182,11 @@ function buildChatPrompt(data: {
   startDate: string
   endDate: string
   query: string
+  sbAvailableFrom?: string | null
 }): string {
   return `You are answering a specific question about Dirty Labs PPC performance.
 
-${DATA_COMPLETENESS_NOTE(1, 14)}
+${DATA_COMPLETENESS_NOTE(1, 14, data.sbAvailableFrom)}
 
 PERIOD: ${data.startDate} to ${data.endDate}
 
@@ -281,6 +285,16 @@ export async function POST(request: Request) {
     // Seed knowledge and watchlist if first run for this brand
     await ensureSeeded(brand_id)
 
+    // Earliest SB/SBV row — tells Claude which periods have full PPC coverage.
+    const sbFromAnalyzeRes = await supabaseAdmin
+      .from('sp_campaign_performance')
+      .select('report_date')
+      .eq('brand_id', brand_id)
+      .in('ad_type', ['SB', 'SBV'])
+      .order('report_date', { ascending: true })
+      .limit(1)
+    const sbAvailableFrom = (!sbFromAnalyzeRes.error && (sbFromAnalyzeRes.data?.[0]?.report_date as string | undefined)) || null
+
     // ── Step 1: Fetch data context ─────────────────────────────────────────
     let userPrompt: string
     let anomalies: AnomalyItem[] = []
@@ -320,6 +334,7 @@ export async function POST(request: Request) {
         memoryContext: memory.promptContext,
         startDate,
         endDate,
+        sbAvailableFrom,
       })
 
     } else if (analysis_type === 'anomaly_detection') {
@@ -343,6 +358,7 @@ export async function POST(request: Request) {
         memoryContext: memory.promptContext,
         startDate,
         endDate,
+        sbAvailableFrom,
       })
 
     } else if (analysis_type === 'opportunity_analysis') {
@@ -366,6 +382,7 @@ export async function POST(request: Request) {
         memoryContext: memory.promptContext,
         startDate,
         endDate,
+        sbAvailableFrom,
       })
 
     } else {
@@ -421,6 +438,7 @@ export async function POST(request: Request) {
         startDate,
         endDate,
         query,
+        sbAvailableFrom,
       })
     }
 

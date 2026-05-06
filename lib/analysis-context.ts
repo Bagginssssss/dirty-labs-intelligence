@@ -328,7 +328,27 @@ When a question is ambiguous:
 Recommendation format: recommendation + supporting logic and conclusion. Full reasoning chain on request or for high-stakes decisions.
 `;
 
-export const DATA_COMPLETENESS_NOTE = (monthsLoaded: number, reportTypes: number): string =>
-  `DATA COVERAGE: Platform contains ${monthsLoaded} month(s) of data across ${reportTypes} report types. ` +
-  `Trend analysis will strengthen as historical backfill progresses. ` +
-  `Treat trend-based findings as HYPOTHESIS until 3+ months are loaded.`;
+export const DATA_COMPLETENESS_NOTE = (
+  monthsLoaded: number,
+  reportTypes: number,
+  sbAvailableFrom?: string | null,
+): string => {
+  const coverage =
+    `DATA COVERAGE: Platform contains ${monthsLoaded} month(s) of data across ${reportTypes} report types. ` +
+    `Trend analysis will strengthen as historical backfill progresses. ` +
+    `Treat trend-based findings as HYPOTHESIS until 3+ months are loaded.`
+
+  const ppcAvailability =
+    `\n\nPPC DATA AVAILABILITY:\n` +
+    `- Sponsored Products (SP): complete from earliest backfill date onward\n` +
+    `- Sponsored Brands (SB) + Sponsored Brands Video (SBV): ` +
+    (sbAvailableFrom
+      ? `complete from ${sbAvailableFrom} onward; unavailable before that due to Amazon Ads Console 60-day retention limit`
+      : `not yet in database — awaiting backfill`) +
+    `\n- For any period query spanning or preceding the SB/SBV cutoff: blended PPC totals ` +
+    `(Total Spend, Blended ROAS, MER, Organic Revenue) reflect SP-only ad activity. ` +
+    `When SB/SBV data is absent, always caveat that true total spend is higher, ` +
+    `and that reported ROAS and MER therefore overstate the full-program figures.`
+
+  return coverage + ppcAvailability
+}
