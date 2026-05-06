@@ -28,25 +28,28 @@ function lacks(normHeaders: string[], ...substrings: string[]): boolean {
 // ORDER IS SIGNIFICANT — first match wins.
 // Rule: most-specific (fewest possible false positives) → least-specific.
 //
-//  1. search_query_performance — unique triple: search_query_score + impressions_total_count
-//                                + purchases_brand_count
-//  2. virtual_bundle_sales     — unique triple: bundle_asin + bundles_sold + total_sales
-//  3. sb_search_term (hint SB) — customer_search_term + viewable_impressions + cost_type
-//                                MUST precede generic SP check; SB files have all three.
-//  4. sp_search_term_report    — unique column "customer_search_term"
-//  5. sp_targeting_report      — unique column "top_of_search_impression_share"
-//                                MUST precede smartscout_share_of_voice because
-//                                "impression_share" is a substring of
-//                                "top_of_search_impression_share".
-//  6. purchased_product_report — unique column "purchased_asin"
-//  7. scale_insights_bid_log   — unique columns "bid_before" / "bid_after"
-//  8. scale_insights_kw_rank   — unique column "organic_rank"
-//  9. subscribe_and_save       — unique column "active_subscriptions"
-// 10. smartscout_brand_revenue — unique column "competitor_brand"
-// 11. business_report          — "sessions" + "buy_box"/"page_views" (fairly unique)
-// 12. smartscout_share_of_voice— "impression_share"/"click_share" with guards
-//                                (lacks targeting/match_type to exclude targeting reports)
-// 13. sp_campaign_performance  — most generic; last resort for Amazon campaign CSV
+//  1. search_query_performance       — unique triple: search_query_score + impressions_total_count
+//                                      + purchases_brand_count
+//  2. virtual_bundle_sales_snapshots — first normalized header matches /^week_\d+_report_/
+//                                      (multi-section 90-day rolling window export)
+//  3. virtual_bundle_sales_daily     — date + bundle_asin + bundles_sold + total_sales
+//                                      (replaces old virtual_bundle_sales; more specific via "date")
+//  4. sb_search_term (hint SB)       — customer_search_term + viewable_impressions + cost_type
+//                                      MUST precede generic SP check; SB files have all three.
+//  5. sp_search_term_report          — unique column "customer_search_term"
+//  6. sp_targeting_report            — unique column "top_of_search_impression_share"
+//                                      MUST precede smartscout_share_of_voice because
+//                                      "impression_share" is a substring of
+//                                      "top_of_search_impression_share".
+//  7. purchased_product_report       — unique column "purchased_asin"
+//  8. scale_insights_bid_log         — unique columns "bid_before" / "bid_after"
+//  9. scale_insights_kw_rank         — unique column "organic_rank"
+// 10. subscribe_and_save             — unique column "active_subscriptions"
+// 11. smartscout_brand_revenue       — unique column "competitor_brand"
+// 12. business_report                — "sessions" + "buy_box"/"page_views" (fairly unique)
+// 13. smartscout_share_of_voice      — "impression_share"/"click_share" with guards
+//                                      (lacks targeting/match_type to exclude targeting reports)
+// 14. sp_campaign_performance        — most generic; last resort for Amazon campaign CSV
 
 const SIGNATURES: Array<{
   reportType: string
@@ -67,11 +70,24 @@ const SIGNATURES: Array<{
       has(h, 'purchases_brand_count'),
   },
   {
-    // Amazon Virtual Bundle Sales report.
-    // BUNDLE_ASIN, BUNDLES_SOLD, and TOTAL_SALES are unique to this export.
-    reportType: 'virtual_bundle_sales',
-    tableName:  'virtual_bundle_sales',
+    // Operator's 90-day rolling window VB snapshot export.
+    // The file is multi-section: each section starts with a "Week N Report (…)" line,
+    // which PapaParse consumes as the header row. After normalize() the first header
+    // becomes "week_N_report_…" — matched here by prefix.
+    // MUST precede virtual_bundle_sales_daily so the flat-CSV check never fires first.
+    reportType: 'virtual_bundle_sales_snapshots',
+    tableName:  'virtual_bundle_sales_snapshots',
+    match: h => h.length > 0 && /^week_\d+_report_/.test(h[0]),
+  },
+  {
+    // Amazon Virtual Bundle Sales daily report.
+    // Replaces the old virtual_bundle_sales detector; "date" makes it unambiguous.
+    // The old virtual_bundle_sales table is preserved for historical data; new uploads
+    // route here until the Phase-2 dashboard migration is complete.
+    reportType: 'virtual_bundle_sales_daily',
+    tableName:  'virtual_bundle_sales_daily',
     match: h =>
+      has(h, 'date') &&
       has(h, 'bundle_asin') &&
       has(h, 'bundles_sold') &&
       has(h, 'total_sales'),

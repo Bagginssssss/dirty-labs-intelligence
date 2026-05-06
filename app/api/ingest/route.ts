@@ -38,6 +38,8 @@ const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   smartscout_subcategory_products: 'brand_id,parent_asin,subcategory,snapshot_date',
   smartscout_subcategory_brands:   'brand_id,brand_name,snapshot_date',
   virtual_bundle_sales:            'brand_id,bundle_asin,sale_date',
+  virtual_bundle_sales_daily:      'brand_id,bundle_asin,sale_date',
+  virtual_bundle_sales_snapshots:  'brand_id,bundle_asin,snapshot_date',
 }
 
 // ─── FK resolution helpers ────────────────────────────────────────────────────
