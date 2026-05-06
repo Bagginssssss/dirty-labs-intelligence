@@ -352,3 +352,45 @@ export const DATA_COMPLETENESS_NOTE = (
 
   return coverage + ppcAvailability
 }
+
+export type VBContextInput = {
+  latestTotal: number
+  latestDate: string
+  wowPct: number | null
+  qoqPct: number | null
+  qoqPriorDate: string | null
+  snapshotCount: number
+  bundleCount: number
+  topBundle: { name: string | null; asin: string; sales: number } | null
+}
+
+export function VIRTUAL_BUNDLE_NOTE(ctx: VBContextInput): string {
+  if (!ctx.latestTotal) return ''
+
+  const wowText = ctx.wowPct != null
+    ? `${ctx.wowPct >= 0 ? '+' : ''}${(ctx.wowPct * 100).toFixed(1)}%`
+    : 'n/a'
+
+  const qoqText = ctx.qoqPct != null
+    ? `${ctx.qoqPct >= 0 ? '+' : ''}${(ctx.qoqPct * 100).toFixed(1)}% vs ${ctx.qoqPriorDate ?? 'prior quarter'}`
+    : 'n/a (no comparable snapshot within ±10 days)'
+
+  const topText = ctx.topBundle
+    ? `${ctx.topBundle.name ?? ctx.topBundle.asin} at $${Math.round(ctx.topBundle.sales).toLocaleString()} 90d`
+    : 'unknown'
+
+  return `\n\nVIRTUAL BUNDLE PERFORMANCE:
+- Latest 90-day total: $${Math.round(ctx.latestTotal).toLocaleString()} (as of ${ctx.latestDate})
+- vs prior week (WoW): ${wowText}
+- vs prior quarter (QoQ): ${qoqText}
+- Bundle count: ${ctx.bundleCount} active bundles · ${ctx.snapshotCount} weekly snapshots on record
+- Top bundle: ${topText}
+
+Note: Virtual bundle data uses 90-day rolling windows (Amazon reporting constraint).
+WoW comparisons reflect the marginal 7-day change across 89 overlapping days; week-to-week
+changes smaller than ~1% may not be meaningful. QoQ comparisons are approximate because
+rolling windows overlap significantly — a +287% QoQ reading means the non-overlapping
+tail of this window is much larger than the non-overlapping tail of the prior comparison window.
+Missing weeks from history (84, 87, 97, 104, 105, 107, 109, 110, 111) are operational gaps
+in the source aggregation — they do not represent actual zero-sales periods.`
+}

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { DIRTY_LABS_SYSTEM_PROMPT, DATA_COMPLETENESS_NOTE } from '@/lib/analysis-context'
+import { DIRTY_LABS_SYSTEM_PROMPT, DATA_COMPLETENESS_NOTE, VIRTUAL_BUNDLE_NOTE, type VBContextInput } from '@/lib/analysis-context'
 import { buildMemoryContext, saveInsight, seedInitialKnowledge, seedDefaultWatches } from '@/lib/memory/index'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import {
@@ -295,6 +295,78 @@ export async function POST(request: Request) {
       .limit(1)
     const sbAvailableFrom = (!sbFromAnalyzeRes.error && (sbFromAnalyzeRes.data?.[0]?.report_date as string | undefined)) || null
 
+    // ── VB context: latest snapshot totals (lightweight — one row per bundle at max date) ──
+    const vbLatestRes = await supabaseAdmin
+      .from('virtual_bundle_sales_snapshots')
+      .select('bundle_asin, bundle_name, snapshot_date, week_number, sales_90d, margin_pct, profit_90d')
+      .eq('brand_id', brand_id)
+      .order('snapshot_date', { ascending: false })
+      .limit(50) // up to ~21 bundles + buffer for the latest snapshot
+
+    let vbNote = ''
+    if (!vbLatestRes.error && vbLatestRes.data && vbLatestRes.data.length > 0) {
+      // Only keep rows from the single latest snapshot_date
+      const latestDate = (vbLatestRes.data[0] as { snapshot_date: string }).snapshot_date
+      const latestRows = vbLatestRes.data.filter((r: { snapshot_date: string }) => r.snapshot_date === latestDate)
+
+      // Fetch prior week snapshot (one week before latestDate)
+      const priorTarget = new Date(latestDate + 'T00:00:00Z').getTime() - 7 * 86_400_000
+      const priorDateISO = new Date(priorTarget).toISOString().slice(0, 10)
+      const priorRes = await supabaseAdmin
+        .from('virtual_bundle_sales_snapshots')
+        .select('snapshot_date, sales_90d')
+        .eq('brand_id', brand_id)
+        .lte('snapshot_date', priorDateISO)
+        .order('snapshot_date', { ascending: false })
+        .limit(30)
+
+      const priorSnap = priorRes.data && priorRes.data.length > 0
+        ? (priorRes.data[0] as { snapshot_date: string }).snapshot_date
+        : null
+      const priorRows = priorSnap
+        ? (priorRes.data ?? []).filter((r: { snapshot_date: string }) => r.snapshot_date === priorSnap)
+        : []
+      const priorTotal = priorRows.reduce((s: number, r: { sales_90d: unknown }) => s + (Number(r.sales_90d) || 0), 0)
+
+      // Fetch QoQ snapshot (~91 days back)
+      const qoqTarget = new Date(latestDate + 'T00:00:00Z').getTime() - 91 * 86_400_000
+      const qoqFromISO = new Date(qoqTarget - 10 * 86_400_000).toISOString().slice(0, 10)
+      const qoqToISO   = new Date(qoqTarget + 10 * 86_400_000).toISOString().slice(0, 10)
+      const qoqRes = await supabaseAdmin
+        .from('virtual_bundle_sales_snapshots')
+        .select('snapshot_date, sales_90d')
+        .eq('brand_id', brand_id)
+        .gte('snapshot_date', qoqFromISO)
+        .lte('snapshot_date', qoqToISO)
+        .order('snapshot_date', { ascending: false })
+        .limit(30)
+      const qoqSnap = qoqRes.data && qoqRes.data.length > 0
+        ? (qoqRes.data[0] as { snapshot_date: string }).snapshot_date
+        : null
+      const qoqRows = qoqSnap
+        ? (qoqRes.data ?? []).filter((r: { snapshot_date: string }) => r.snapshot_date === qoqSnap)
+        : []
+      const qoqTotal = qoqRows.reduce((s: number, r: { sales_90d: unknown }) => s + (Number(r.sales_90d) || 0), 0)
+
+      type VBRow = { bundle_asin: string; bundle_name: string | null; sales_90d: unknown }
+      const latestTotal = (latestRows as VBRow[]).reduce((s, r) => s + (Number(r.sales_90d) || 0), 0)
+      const topBundle = (latestRows as VBRow[]).reduce<VBRow | null>((best, r) => {
+        return !best || (Number(r.sales_90d) || 0) > (Number(best.sales_90d) || 0) ? r : best
+      }, null)
+
+      const ctx: VBContextInput = {
+        latestTotal,
+        latestDate,
+        wowPct: priorTotal > 0 ? (latestTotal - priorTotal) / priorTotal : null,
+        qoqPct: qoqTotal > 0 ? (latestTotal - qoqTotal) / qoqTotal : null,
+        qoqPriorDate: qoqSnap,
+        snapshotCount: 0, // not fetched here — use note text directly
+        bundleCount: latestRows.length,
+        topBundle: topBundle ? { name: topBundle.bundle_name, asin: topBundle.bundle_asin, sales: Number(topBundle.sales_90d) || 0 } : null,
+      }
+      vbNote = VIRTUAL_BUNDLE_NOTE(ctx)
+    }
+
     // ── Step 1: Fetch data context ─────────────────────────────────────────
     let userPrompt: string
     let anomalies: AnomalyItem[] = []
@@ -441,6 +513,9 @@ export async function POST(request: Request) {
         sbAvailableFrom,
       })
     }
+
+    // Append VB context if available (non-empty means data exists)
+    if (vbNote) userPrompt += vbNote
 
     // ── Step 4: Call Anthropic API ─────────────────────────────────────────
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {

@@ -170,6 +170,33 @@ export type IngestStatus = {
   spApiConnected: boolean;
 };
 
+export type VirtualBundlePerBundle = {
+  bundle_asin: string;
+  bundle_name: string | null;
+  sales_90d: number;
+  margin_pct: number | null;
+  profit_90d: number | null;
+};
+
+export type VirtualBundleSnapshot = {
+  snapshot_date: string;
+  week_number: number;
+  total_sales_90d: number;
+  per_bundle: VirtualBundlePerBundle[];
+};
+
+export type VirtualBundleData = {
+  latest: VirtualBundleSnapshot | null;
+  wow: { prior: VirtualBundleSnapshot | null; change_pct: number | null };
+  qoq: { prior: VirtualBundleSnapshot | null; change_pct: number | null };
+  timeSeries: Array<{ snapshot_date: string; week_number: number; total_sales_90d: number }>;
+  perBundleTimeSeries: Array<{
+    bundle_asin: string;
+    bundle_name: string | null;
+    points: Array<{ snapshot_date: string; sales_90d: number }>;
+  }>;
+};
+
 export type DashboardData = {
   period: DashboardPeriod;
   goals: GoalCard[];
@@ -178,5 +205,6 @@ export type DashboardData = {
   businessHealth: BusinessHealthData;
   ppc: PPCSnapshot;
   search: SearchIntelData;
+  virtualBundles: VirtualBundleData;
   status: IngestStatus;
 };

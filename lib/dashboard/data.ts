@@ -28,7 +28,10 @@ import type {
   SQPRow,
   SSCards,
   SubcategoryRankRow,
+  VirtualBundleData,
+  VirtualBundleSnapshot,
 } from './types';
+import { fetchAll } from '@/lib/queries/fetch-all';
 import type { ResolvedPeriod } from './period';
 
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -1208,16 +1211,130 @@ async function loadStatus(): Promise<IngestStatus> {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Virtual Bundles                                                            */
+/* -------------------------------------------------------------------------- */
+
+async function loadVirtualBundles(): Promise<VirtualBundleData> {
+  type SnapshotRow = {
+    bundle_asin: string;
+    bundle_name: string | null;
+    snapshot_date: string;
+    week_number: number | null;
+    sales_90d: number | null;
+    margin_pct: number | null;
+    profit_90d: number | null;
+  };
+
+  const empty: VirtualBundleData = {
+    latest: null,
+    wow: { prior: null, change_pct: null },
+    qoq: { prior: null, change_pct: null },
+    timeSeries: [],
+    perBundleTimeSeries: [],
+  };
+
+  const rows = await fetchAll<SnapshotRow>(() =>
+    supabaseAdmin
+      .from('virtual_bundle_sales_snapshots')
+      .select('bundle_asin, bundle_name, snapshot_date, week_number, sales_90d, margin_pct, profit_90d')
+      .eq('brand_id', BRAND_ID)
+      .order('snapshot_date', { ascending: true })
+  ).catch((): SnapshotRow[] => []);
+
+  if (rows.length === 0) return empty;
+
+  // Group rows by snapshot_date → one VirtualBundleSnapshot per date.
+  const snapshotMap = new Map<string, VirtualBundleSnapshot>();
+  for (const row of rows) {
+    const date = row.snapshot_date;
+    if (!snapshotMap.has(date)) {
+      snapshotMap.set(date, {
+        snapshot_date: date,
+        week_number: row.week_number ?? 0,
+        total_sales_90d: 0,
+        per_bundle: [],
+      });
+    }
+    const snap = snapshotMap.get(date)!;
+    const sales = Number(row.sales_90d) || 0;
+    snap.total_sales_90d += sales;
+    snap.per_bundle.push({
+      bundle_asin: row.bundle_asin,
+      bundle_name: row.bundle_name,
+      sales_90d: sales,
+      margin_pct: row.margin_pct !== null ? Number(row.margin_pct) : null,
+      profit_90d: row.profit_90d !== null ? Number(row.profit_90d) : null,
+    });
+  }
+
+  // snapshots are already ordered by date asc (DB order preserved by Map insertion)
+  const snapshots = Array.from(snapshotMap.values());
+  const latest = snapshots[snapshots.length - 1] ?? null;
+  const wowPrior = snapshots.length >= 2 ? snapshots[snapshots.length - 2] : null;
+
+  // QoQ: closest snapshot to (latest.snapshot_date - 91 days), within ±10 days.
+  let qoqPrior: VirtualBundleSnapshot | null = null;
+  if (latest) {
+    const targetMs = new Date(latest.snapshot_date + 'T00:00:00Z').getTime() - 91 * 86_400_000;
+    let bestDiff = Infinity;
+    for (const snap of snapshots) {
+      if (snap.snapshot_date === latest.snapshot_date) continue;
+      const diff = Math.abs(new Date(snap.snapshot_date + 'T00:00:00Z').getTime() - targetMs);
+      if (diff < bestDiff && diff <= 10 * 86_400_000) {
+        bestDiff = diff;
+        qoqPrior = snap;
+      }
+    }
+  }
+
+  const wowChangePct = latest && wowPrior && wowPrior.total_sales_90d > 0
+    ? (latest.total_sales_90d - wowPrior.total_sales_90d) / wowPrior.total_sales_90d
+    : null;
+  const qoqChangePct = latest && qoqPrior && qoqPrior.total_sales_90d > 0
+    ? (latest.total_sales_90d - qoqPrior.total_sales_90d) / qoqPrior.total_sales_90d
+    : null;
+
+  const timeSeries = snapshots.map(s => ({
+    snapshot_date: s.snapshot_date,
+    week_number: s.week_number,
+    total_sales_90d: s.total_sales_90d,
+  }));
+
+  // Per-bundle time series — sorted by latest snapshot sales descending.
+  const bundleMap = new Map<string, { bundle_name: string | null; points: { snapshot_date: string; sales_90d: number }[] }>();
+  for (const snap of snapshots) {
+    for (const b of snap.per_bundle) {
+      if (!bundleMap.has(b.bundle_asin)) {
+        bundleMap.set(b.bundle_asin, { bundle_name: b.bundle_name, points: [] });
+      }
+      bundleMap.get(b.bundle_asin)!.points.push({ snapshot_date: snap.snapshot_date, sales_90d: b.sales_90d });
+    }
+  }
+  const perBundleTimeSeries = Array.from(bundleMap.entries())
+    .map(([bundle_asin, { bundle_name, points }]) => ({ bundle_asin, bundle_name, points }))
+    .sort((a, b) => (b.points.at(-1)?.sales_90d ?? 0) - (a.points.at(-1)?.sales_90d ?? 0));
+
+  return {
+    latest,
+    wow: { prior: wowPrior, change_pct: wowChangePct },
+    qoq: { prior: qoqPrior, change_pct: qoqChangePct },
+    timeSeries,
+    perBundleTimeSeries,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Composite                                                                  */
 /* -------------------------------------------------------------------------- */
 
 export async function loadDashboardData(period: ResolvedPeriod): Promise<DashboardData> {
-  const [goals, alertBundle, businessHealth, ppc, search, status] = await Promise.all([
+  const [goals, alertBundle, businessHealth, ppc, search, virtualBundles, status] = await Promise.all([
     loadGoalRail(period),
     loadAlerts(period),
     loadBusinessHealth(period),
     loadPPC(period),
     loadSearchIntel(period),
+    loadVirtualBundles(),
     loadStatus(),
   ]);
 
@@ -1239,6 +1356,7 @@ export async function loadDashboardData(period: ResolvedPeriod): Promise<Dashboa
     businessHealth,
     ppc,
     search,
+    virtualBundles,
     status,
   };
 }
