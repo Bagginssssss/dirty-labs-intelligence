@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import type {
   BusinessHealthData, CVRBuyBoxRow, MarketShareView, SSCards, BundleCards, SubcategoryRankRow,
+  VirtualBundleData,
 } from '@/lib/dashboard/types';
 import { fmtPct, fmtPctSigned, fmtRank, fmtUSDCompact, fmtIntCompact } from '@/lib/dashboard/format';
 
 export function BusinessHealth({
-  data, periodLabel,
+  data, periodLabel, virtualBundles,
 }: {
-  data: BusinessHealthData; periodLabel: string;
+  data: BusinessHealthData; periodLabel: string; virtualBundles: VirtualBundleData;
 }) {
   return (
     <section className="bg-[#16161a] border border-[#1e1e2e] rounded-[6px] p-[11px]">
@@ -29,8 +30,15 @@ export function BusinessHealth({
       <SubLabel>SUBSCRIBE & SAVE</SubLabel>
       <SSGrid cards={data.ss} />
 
-      <SubLabel>BUNDLE PERFORMANCE <Tag>{`90-day · ${data.bundles.windowLabel}`}</Tag></SubLabel>
-      <BundlesGrid cards={data.bundles} />
+      <SubLabel>
+        BUNDLE PERFORMANCE
+        <Tag>
+          {virtualBundles.latest
+            ? `90-day · as of ${virtualBundles.latest.snapshot_date}`
+            : `90-day · ${data.bundles.windowLabel}`}
+        </Tag>
+      </SubLabel>
+      <VBSnapshotGrid vb={virtualBundles} legacyCards={data.bundles} />
     </section>
   );
 }
@@ -198,6 +206,59 @@ function SSGrid({ cards }: { cards: SSCards }) {
       <MiniCard label="Active subs"  value={cards.activeSubs ? fmtIntCompact(cards.activeSubs) : '—'}   mom={cards.activeSubsMoM}  nullLabel="first snapshot" nullLabelItalic />
       <MiniCard label="S&S revenue"  value={cards.ssRevenue ? fmtUSDCompact(cards.ssRevenue) : '—'}       mom={cards.ssRevenueMoM}   nullLabel="first snapshot" nullLabelItalic />
       <MiniCard label="Penetration"  value={cards.penetration != null ? fmtPct(cards.penetration) : '—'} mom={cards.penetrationMoM} nullLabel="first snapshot" nullLabelItalic />
+    </div>
+  );
+}
+
+function VBSnapshotGrid({ vb, legacyCards }: { vb: VirtualBundleData; legacyCards: BundleCards }) {
+  const latest = vb.latest;
+  const wowPct = vb.wow.change_pct;
+  const qoqPct = vb.qoq.change_pct;
+
+  // Fall back to legacy BundleCards display when no snapshot data is loaded.
+  if (!latest) {
+    return <BundlesGrid cards={legacyCards} />;
+  }
+
+  const wowColor = wowPct == null ? 'text-[#64748b]' : wowPct > 0.001 ? 'text-[#10b981]' : wowPct < -0.001 ? 'text-[#ef4444]' : 'text-[#64748b]';
+  const qoqColor = qoqPct == null ? 'text-[#64748b]' : qoqPct > 0.001 ? 'text-[#10b981]' : qoqPct < -0.001 ? 'text-[#ef4444]' : 'text-[#64748b]';
+  const qoqIsLarge = qoqPct !== null && Math.abs(qoqPct) > 1;
+
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-[5px] mt-1">
+        <MiniCard
+          label="VB Total (90d)"
+          value={fmtUSDCompact(latest.total_sales_90d, 0)}
+          nullLabel={`Week ${latest.week_number}`}
+          nullLabelItalic
+        />
+        <div className="bg-[#111113] rounded-[3px] px-[7px] py-[5px]">
+          <div className="text-[8px] text-[#475569] mb-[2px]">vs Last Week</div>
+          <div className={`text-[11px] font-medium ${wowColor}`}>
+            {wowPct != null ? fmtPctSigned(wowPct) : '—'}
+          </div>
+          {vb.wow.prior && (
+            <div className="text-[8px] text-[#475569] mt-[1px]">Week {vb.wow.prior.week_number}</div>
+          )}
+        </div>
+        <div className="bg-[#111113] rounded-[3px] px-[7px] py-[5px]">
+          <div className="text-[8px] text-[#475569] mb-[2px]">vs Last Quarter</div>
+          <div className={`text-[11px] font-medium ${qoqColor}`}>
+            {qoqPct != null ? fmtPctSigned(qoqPct) : '—'}
+          </div>
+          {vb.qoq.prior ? (
+            <div className="text-[8px] text-[#475569] mt-[1px]">Week {vb.qoq.prior.week_number}</div>
+          ) : (
+            <div className="text-[8px] text-[#475569] mt-[1px] italic">no prior</div>
+          )}
+        </div>
+      </div>
+      {qoqIsLarge && (
+        <div className="text-[7px] text-[#f59e0b] mt-[3px] leading-snug">
+          ⚠ QoQ uses 90-day rolling windows — {Math.round((qoqPct ?? 0) * 100)}% reflects trough-to-peak shift in the non-overlapping portion, not a full-quarter comparison.
+        </div>
+      )}
     </div>
   );
 }

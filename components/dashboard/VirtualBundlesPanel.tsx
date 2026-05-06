@@ -1,3 +1,17 @@
+/**
+ * VirtualBundlesPanel — full virtual bundle visualization including
+ * brand-level time series, per-bundle small multiples, and click-
+ * through drill-down with margin/profit detail.
+ *
+ * Currently NOT rendered in the Command Center dashboard. Preserved
+ * for future use in the planned business dashboard surface (separate
+ * from Command Center). When that surface is built, import this
+ * component there.
+ *
+ * Data dependency: loadVirtualBundles in lib/dashboard/data.ts.
+ * Returns VirtualBundleData with latest snapshot, WoW/QoQ
+ * comparisons, brand time series, and per-bundle time series.
+ */
 'use client';
 
 import { useState } from 'react';

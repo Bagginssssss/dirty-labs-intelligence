@@ -5,7 +5,6 @@ import { GoalRail } from '@/components/dashboard/GoalRail';
 import { BusinessHealth } from '@/components/dashboard/BusinessHealth';
 import { PPCAtAGlance } from '@/components/dashboard/PPCAtAGlance';
 import { SearchIntelligence } from '@/components/dashboard/SearchIntelligence';
-import { VirtualBundlesPanel } from '@/components/dashboard/VirtualBundlesPanel';
 import { Footer } from '@/components/dashboard/Footer';
 import { resolvePeriod } from '@/lib/dashboard/period';
 import { BRAND_ID, loadDashboardData } from '@/lib/dashboard/data';
@@ -50,17 +49,13 @@ export default async function CommandCenter({
 
       <section className="mx-auto max-w-[1600px] px-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-[9px]">
-          <BusinessHealth data={data.businessHealth} periodLabel={data.period.effectiveLabel} />
+          <BusinessHealth data={data.businessHealth} periodLabel={data.period.effectiveLabel} virtualBundles={data.virtualBundles} />
           <PPCAtAGlance data={data.ppc} periodLabel={data.period.effectiveLabel} />
           <SearchIntelligence data={data.search} />
         </div>
       </section>
 
-      <div className="mx-auto max-w-[1600px] px-4 mt-[9px]">
-        <VirtualBundlesPanel data={data.virtualBundles} />
-      </div>
-
-      <div className="mx-auto max-w-[1600px] px-4 mt-[9px]">
+      <div className="mx-auto max-w-[1600px] px-4">
         <Footer status={data.status} />
       </div>
     </div>
