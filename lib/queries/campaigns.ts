@@ -13,7 +13,7 @@ type RawPerf = {
   ntb_orders_14d: number | null
 }
 
-type CampaignMeta = { id: string; campaign_name: string | null; ad_type: string | null; targeting_type: string | null }
+type CampaignMeta = { id: string; campaign_name: string | null; ad_type: string | null; targeting_type: string | null; launch_date: string | null }
 
 async function fetchCampaignPerf(
   brandId: string,
@@ -31,7 +31,7 @@ async function fetchCampaignPerf(
     ),
     supabaseAdmin
       .from('campaigns')
-      .select('id, campaign_name, ad_type, targeting_type')
+      .select('id, campaign_name, ad_type, targeting_type, launch_date')
       .eq('brand_id', brandId),
   ])
 
@@ -61,6 +61,7 @@ function aggregateByCampaign(
         campaign_name: info?.campaign_name ?? null,
         ad_type:       info?.ad_type ?? row.ad_type ?? null,
         targeting_type: info?.targeting_type ?? null,
+        launch_date:   info?.launch_date ?? null,
         spend:     0,
         sales:     0,
         orders:    0,

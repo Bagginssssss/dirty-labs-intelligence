@@ -43,31 +43,45 @@ const UPSERT_CONFLICT_KEYS: Record<string, string> = {
 // ─── FK resolution helpers ────────────────────────────────────────────────────
 
 // Resolves (or creates) a campaign row and returns its UUID.
-// Results are cached in campaignCache to avoid redundant DB round-trips.
+// When reportDate is provided (sp_campaign_performance ingests), maintains
+// campaigns.launch_date as MIN(report_date) seen so far — "earlier date wins".
+// Results are cached in campaignCache to avoid redundant DB round-trips per file.
 async function resolveCampaignId(
   brandId: string,
   amazonId: string,
   name: string,
-  campaignCache: Map<string, string>
+  campaignCache: Map<string, string>,
+  reportDate?: string,
 ): Promise<string | null> {
   const cacheKey = `${brandId}::${amazonId}`
   if (campaignCache.has(cacheKey)) return campaignCache.get(cacheKey)!
 
   const { data: existing } = await supabaseAdmin
     .from('campaigns')
-    .select('id')
+    .select('id, launch_date')
     .eq('brand_id', brandId)
     .eq('campaign_id', amazonId)
     .maybeSingle()
 
   if (existing) {
     campaignCache.set(cacheKey, existing.id)
+    // Update launch_date only when this file's date is strictly earlier than stored.
+    if (reportDate) {
+      const stored = existing.launch_date as string | null
+      if (!stored || reportDate < stored) {
+        await supabaseAdmin
+          .from('campaigns')
+          .update({ launch_date: reportDate })
+          .eq('id', existing.id)
+        // Non-throwing: a failure here only means launch_date lags; data is not lost.
+      }
+    }
     return existing.id
   }
 
   const { data: inserted, error } = await supabaseAdmin
     .from('campaigns')
-    .insert({ brand_id: brandId, campaign_id: amazonId, campaign_name: name })
+    .insert({ brand_id: brandId, campaign_id: amazonId, campaign_name: name, launch_date: reportDate ?? null })
     .select('id')
     .single()
 
@@ -181,7 +195,8 @@ async function resolveRows(
         brandId,
         row._campaign_amazon_id as string,
         row._campaign_name as string,
-        campaignCache
+        campaignCache,
+        row.report_date as string | undefined,
       )
       if (!campaignUuid) { rejected++; continue }
 
@@ -201,7 +216,8 @@ async function resolveRows(
         brandId,
         row._campaign_amazon_id as string,
         row._campaign_name as string,
-        campaignCache
+        campaignCache,
+        row.report_date as string | undefined,
       )
       if (!campaignUuid) { rejected++; continue }
       clean.campaign_id = campaignUuid

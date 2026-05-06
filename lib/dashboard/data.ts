@@ -41,7 +41,6 @@ import { getHarvestCandidates } from '@/lib/queries/keywords';
 import { getAnomalies } from '@/lib/queries/anomalies';
 import { getASINPerformance } from '@/lib/queries/products';
 import { getRankMovers } from '@/lib/queries/rank';
-import { fetchAll } from '@/lib/queries/fetch-all';
 import { shortName, ASIN_NAMES } from './asin-names';
 
 export const BRAND_ID = '47a96175-ed58-4104-a2ff-c925d6143309';
@@ -896,23 +895,13 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   const year = endDate.getUTCFullYear();
   const monthIndex = endDate.getUTCMonth() as MonthIndex;
 
-  // INB-31 stopgap: campaigns.created_at is ingestion date, not Amazon launch date.
-  // Using MIN(report_date) from sp_campaign_performance as launch proxy.
+  // 14-day cutoff for 'new' campaign tag: campaigns.launch_date >= this date.
   const cutoff14dDate = new Date(endDate.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
 
-  type FirstSeenRow = { campaign_id: string; report_date: string }
-
-  const [byType, harvest, acct, firstSeenData, sbFromRes] = await Promise.all([
+  const [byType, harvest, acct, sbFromRes] = await Promise.all([
     getCampaignsByAdType(BRAND_ID, period.start, period.end),
     getHarvestCandidates(BRAND_ID, period.start, period.end),
     getAccountSummary(BRAND_ID, period.start, period.end),
-    fetchAll<FirstSeenRow>(() =>
-      supabaseAdmin
-        .from('sp_campaign_performance')
-        .select('campaign_id, report_date')
-        .eq('brand_id', BRAND_ID)
-        .order('report_date', { ascending: true })
-    ).catch((): FirstSeenRow[] => []),
     // Earliest SB/SBV row — determines whether this period has full PPC coverage.
     supabaseAdmin
       .from('sp_campaign_performance')
@@ -1032,12 +1021,6 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   ];
 
   // Watchlist — map queries.CampaignRow → dashboard CampaignRow
-  // Build first_seen_date map: earliest report_date per campaign_id (INB-31 stopgap)
-  const firstSeenMap = new Map<string, string>();
-  for (const r of firstSeenData) {
-    if (!firstSeenMap.has(r.campaign_id)) firstSeenMap.set(r.campaign_id, r.report_date);
-  }
-
   function toAdType(raw: string | null): 'SP' | 'SB' | 'SBV' {
     if (raw === 'SBV') return 'SBV';
     if (raw === 'SB')  return 'SB';
@@ -1048,10 +1031,9 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
     roas: number | null,
     spend: number,
     impressions: number,
-    campaignId: string,
+    launchDate: string | null,
   ): CampaignRow['status'] {
-    const firstSeen = firstSeenMap.get(campaignId);
-    if (firstSeen && firstSeen >= cutoff14dDate && impressions < 100) return 'new';
+    if (launchDate && launchDate >= cutoff14dDate && impressions < 100) return 'new';
     if (roas !== null && roas >= 5) return 'top';
     if (roas !== null && roas < 2 && spend > 50) return 'waste';
     return 'watching';
@@ -1069,7 +1051,7 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
         roas:        c.roas,
         orders:      c.orders,
         impressions: c.impressions,
-        status:      toStatus(c.roas, c.spend, c.impressions, c.campaign_uuid),
+        status:      toStatus(c.roas, c.spend, c.impressions, c.launch_date),
       };
     })
     .sort((a, b) => b.spend - a.spend)

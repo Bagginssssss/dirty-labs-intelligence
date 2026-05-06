@@ -23,6 +23,7 @@ export interface CampaignRow {
   campaign_name: string | null
   ad_type: string | null
   targeting_type: string | null
+  launch_date: string | null
   spend: number
   sales: number
   roas: number | null
