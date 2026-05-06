@@ -83,14 +83,14 @@ const SIGNATURES: Array<{
     tableName: 'sp_search_term_report',
     hint: 'SB',
     match: h =>
-      has(h, 'customer_search_term') &&
+      has(h, 'customer_search_term', 'date') &&
       has(h, 'viewable_impressions') &&
       has(h, 'cost_type'),
   },
   {
     reportType: 'sp_search_term_report',
     tableName: 'sp_search_term_report',
-    match: h => has(h, 'customer_search_term'),
+    match: h => has(h, 'customer_search_term', 'date'),
   },
   {
     // SB Keyword Report shares the same table as SP Targeting.
@@ -238,7 +238,7 @@ const SIGNATURES: Array<{
     reportType: 'sp_campaign_performance',
     tableName: 'sp_campaign_performance',
     match: h =>
-      has(h, 'campaign_name', 'impressions', 'clicks') &&
+      has(h, 'campaign_name', 'impressions', 'clicks', 'date') &&
       lacks(h, 'customer_search_term', 'top_of_search', 'purchased_asin', 'organic_rank', 'bid_before'),
   },
 ]

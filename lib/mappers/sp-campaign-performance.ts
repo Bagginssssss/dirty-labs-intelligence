@@ -91,8 +91,7 @@ export function mapSpCampaignPerformance(row: RawRow, brandId: string): SpCampai
     _campaign_amazon_id: get('', 'Campaign ID', 'campaign_id') || campaignName,
     _campaign_name: campaignName,
 
-    // Amazon uses "Start Date" not "Date" in this report format.
-    report_date: parseDate(get('', 'Start Date', 'start_date', 'Date', 'date', 'report_date')),
+    report_date: parseDate(get('', 'Date', 'date', 'report_date', 'Start Date', 'start_date')),
 
     ad_type: adType,
 

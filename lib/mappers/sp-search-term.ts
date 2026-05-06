@@ -64,7 +64,7 @@ export function mapSpSearchTerm(row: RawRow, brandId: string, context?: MapperCo
     _ad_group_amazon_id: get('', 'Ad Group ID', 'ad_group_id') || adGroupName,
     _ad_group_name: adGroupName,
 
-    report_date: parseDate(get('', 'Start Date', 'start_date', 'Date', 'date', 'report_date')),
+    report_date: parseDate(get('', 'Date', 'date', 'report_date', 'Start Date', 'start_date')),
 
     customer_search_term: get(null as unknown as string, 'Customer Search Term', 'customer_search_term') || null,
     targeting:  get(null as unknown as string, 'Targeting',  'targeting')  || null,
