@@ -17,7 +17,7 @@ interface RangeableQuery {
 }
 
 export async function fetchAll<T>(buildQuery: () => RangeableQuery): Promise<T[]> {
-  const PAGE_SIZE = 1000
+  const PAGE_SIZE = 5000
   const all: T[] = []
   let offset = 0
 
