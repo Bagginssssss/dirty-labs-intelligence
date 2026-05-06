@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { fetchAll } from './fetch-all'
 import { AnomalyItem } from './types'
 
 function ratio(n: number, d: number): number | null {
@@ -36,8 +37,10 @@ export async function getAnomalies(
   const priorEnd    = addDays(windowStart, -1)
   const priorStart  = addDays(priorEnd, -lookbackDays + 1)
 
+  type CampaignPerfRow = { campaign_id: string; spend: number; sales_7d: number; orders_7d: number }
+
   // ── 1. Fetch current and prior period derived metrics ─────────────────────
-  const [curRes, priorRes, campaignRes, bizRes] = await Promise.all([
+  const [curRes, priorRes, campaignRows, bizRes] = await Promise.all([
     supabaseAdmin
       .from('derived_metrics_daily')
       .select('total_ppc_spend, total_ppc_sales, total_revenue, total_orders, ntb_orders, total_clicks, metric_date')
@@ -50,12 +53,14 @@ export async function getAnomalies(
       .eq('brand_id', brandId)
       .gte('metric_date', priorStart)
       .lte('metric_date', priorEnd),
-    supabaseAdmin
-      .from('sp_campaign_performance')
-      .select('campaign_id, spend, sales_7d, orders_7d')
-      .eq('brand_id', brandId)
-      .gte('report_date', windowStart)
-      .lte('report_date', windowEnd),
+    fetchAll<CampaignPerfRow>(() =>
+      supabaseAdmin
+        .from('sp_campaign_performance')
+        .select('campaign_id, spend, sales_7d, orders_7d')
+        .eq('brand_id', brandId)
+        .gte('report_date', windowStart)
+        .lte('report_date', windowEnd)
+    ).catch((): CampaignPerfRow[] => []),
     supabaseAdmin
       .from('business_report')
       .select('asin_id, buy_box_pct, report_date')
@@ -175,10 +180,10 @@ export async function getAnomalies(
   }
 
   // ── Check 4: High ACOS campaigns ─────────────────────────────────────────
-  if (!campaignRes.error) {
+  if (campaignRows.length > 0) {
     const campAcc = new Map<string, { spend: number; sales: number; orders: number }>()
-    for (const row of (campaignRes.data ?? [])) {
-      const id = row.campaign_id as string
+    for (const row of campaignRows) {
+      const id = row.campaign_id
       if (!campAcc.has(id)) campAcc.set(id, { spend: 0, sales: 0, orders: 0 })
       const a = campAcc.get(id)!
       a.spend  += Number(row.spend) || 0

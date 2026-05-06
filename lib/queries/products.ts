@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { fetchAll } from './fetch-all'
 import { ASINRow, SSRow } from './types'
 
 type AsinMeta = { id: string; asin: string; title: string | null }
@@ -16,22 +17,27 @@ async function fetchAsinMeta(brandId: string): Promise<Map<string, AsinMeta>> {
   return map
 }
 
+type BrRaw = {
+  asin_id: string; sessions_total: number | null; units_ordered: number | null
+  buy_box_pct: number | null; ordered_product_sales: number | null; total_order_items: number | null
+}
+
 export async function getASINPerformance(
   brandId: string,
   startDate: string,
   endDate: string
 ): Promise<ASINRow[]> {
-  const [brRes, asinMap] = await Promise.all([
-    supabaseAdmin
-      .from('business_report')
-      .select('asin_id, sessions_total, units_ordered, buy_box_pct, ordered_product_sales, total_order_items')
-      .eq('brand_id', brandId)
-      .gte('report_date', startDate)
-      .lte('report_date', endDate),
+  const [brRows, asinMap] = await Promise.all([
+    fetchAll<BrRaw>(() =>
+      supabaseAdmin
+        .from('business_report')
+        .select('asin_id, sessions_total, units_ordered, buy_box_pct, ordered_product_sales, total_order_items')
+        .eq('brand_id', brandId)
+        .gte('report_date', startDate)
+        .lte('report_date', endDate)
+    ),
     fetchAsinMeta(brandId),
   ])
-
-  if (brRes.error) throw new Error(`getASINPerformance failed: ${brRes.error.message}`)
 
   const acc = new Map<string, {
     asin_id: string; sessions: number; units_ordered: number
@@ -39,8 +45,8 @@ export async function getASINPerformance(
     buy_box_sum: number; buy_box_count: number
   }>()
 
-  for (const row of (brRes.data ?? [])) {
-    const id = row.asin_id as string
+  for (const row of brRows) {
+    const id = row.asin_id
     if (!acc.has(id)) {
       acc.set(id, { asin_id: id, sessions: 0, units_ordered: 0, revenue: 0, total_order_items: 0, buy_box_sum: 0, buy_box_count: 0 })
     }
@@ -72,30 +78,36 @@ export async function getASINPerformance(
   }).sort((a, b) => b.revenue - a.revenue)
 }
 
+type SsRaw = {
+  asin_id: string; active_subscriptions: number | null; ss_revenue: number | null
+  ss_units_shipped: number | null; reorder_rate: number | null; report_date: string
+}
+
 export async function getSSPerformance(
   brandId: string,
   startDate: string,
   endDate: string
 ): Promise<SSRow[]> {
-  const [ssRes, asinMap] = await Promise.all([
-    supabaseAdmin
-      .from('subscribe_and_save')
-      .select('asin_id, active_subscriptions, ss_revenue, ss_units_shipped, reorder_rate, report_date')
-      .eq('brand_id', brandId)
-      .gte('report_date', startDate)
-      .lte('report_date', endDate)
-      .order('report_date', { ascending: false }),
+  const [ssRows, asinMap] = await Promise.all([
+    fetchAll<SsRaw>(() =>
+      supabaseAdmin
+        .from('subscribe_and_save')
+        .select('asin_id, active_subscriptions, ss_revenue, ss_units_shipped, reorder_rate, report_date')
+        .eq('brand_id', brandId)
+        .gte('report_date', startDate)
+        .lte('report_date', endDate)
+        .order('report_date', { ascending: false })
+    ),
     fetchAsinMeta(brandId),
   ])
 
-  if (ssRes.error) throw new Error(`getSSPerformance failed: ${ssRes.error.message}`)
-
   // Active subscriptions = latest value; revenue/units = sum
+  // Pages arrive newest-first (order ascending: false), so first-seen per ASIN = most recent.
   const latestSubs = new Map<string, number>()
   const acc = new Map<string, { asin_id: string; ss_revenue: number; ss_units_shipped: number; reorder_rate_sum: number; reorder_rate_count: number }>()
 
-  for (const row of (ssRes.data ?? [])) {
-    const id = row.asin_id as string
+  for (const row of ssRows) {
+    const id = row.asin_id
 
     if (!latestSubs.has(id)) {
       latestSubs.set(id, Number(row.active_subscriptions) || 0)

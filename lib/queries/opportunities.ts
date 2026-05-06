@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { fetchAll } from './fetch-all'
 import { OpportunityRow, CompetitorRow } from './types'
 
 // Returns search queries where brand purchase share is low (< brandShareThreshold)
@@ -13,17 +14,15 @@ export async function getSearchQueryGaps(
   // Aggregate SQP rows by search_query across the date range
   type SQPRow = Record<string, unknown>
 
-  const { data, error } = await supabaseAdmin
-    .from('search_query_performance')
-    .select('search_query, search_query_volume, purchases_total, purchases_brand, purchases_brand_share, impressions_brand_share, clicks_brand_share')
-    .eq('brand_id', brandId)
-    .gte('report_date', startDate)
-    .lte('report_date', endDate)
-    .lt('purchases_brand_share', brandShareThreshold)
-
-  if (error) throw new Error(`getSearchQueryGaps failed: ${error.message}`)
-
-  const rows = (data ?? []) as unknown as SQPRow[]
+  const rows = await fetchAll<SQPRow>(() =>
+    supabaseAdmin
+      .from('search_query_performance')
+      .select('search_query, search_query_volume, purchases_total, purchases_brand, purchases_brand_share, impressions_brand_share, clicks_brand_share')
+      .eq('brand_id', brandId)
+      .gte('report_date', startDate)
+      .lte('report_date', endDate)
+      .lt('purchases_brand_share', brandShareThreshold)
+  )
 
   const acc = new Map<string, {
     volume_sum: number; volume_count: number

@@ -41,6 +41,7 @@ import { getHarvestCandidates } from '@/lib/queries/keywords';
 import { getAnomalies } from '@/lib/queries/anomalies';
 import { getASINPerformance } from '@/lib/queries/products';
 import { getRankMovers } from '@/lib/queries/rank';
+import { fetchAll } from '@/lib/queries/fetch-all';
 import { shortName, ASIN_NAMES } from './asin-names';
 
 export const BRAND_ID = '47a96175-ed58-4104-a2ff-c925d6143309';
@@ -899,15 +900,19 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   // Using MIN(report_date) from sp_campaign_performance as launch proxy.
   const cutoff14dDate = new Date(endDate.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
 
-  const [byType, harvest, acct, firstSeenRes, sbFromRes] = await Promise.all([
+  type FirstSeenRow = { campaign_id: string; report_date: string }
+
+  const [byType, harvest, acct, firstSeenData, sbFromRes] = await Promise.all([
     getCampaignsByAdType(BRAND_ID, period.start, period.end),
     getHarvestCandidates(BRAND_ID, period.start, period.end),
     getAccountSummary(BRAND_ID, period.start, period.end),
-    supabaseAdmin
-      .from('sp_campaign_performance')
-      .select('campaign_id, report_date')
-      .eq('brand_id', BRAND_ID)
-      .order('report_date', { ascending: true }),
+    fetchAll<FirstSeenRow>(() =>
+      supabaseAdmin
+        .from('sp_campaign_performance')
+        .select('campaign_id, report_date')
+        .eq('brand_id', BRAND_ID)
+        .order('report_date', { ascending: true })
+    ).catch((): FirstSeenRow[] => []),
     // Earliest SB/SBV row — determines whether this period has full PPC coverage.
     supabaseAdmin
       .from('sp_campaign_performance')
@@ -1029,12 +1034,8 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   // Watchlist — map queries.CampaignRow → dashboard CampaignRow
   // Build first_seen_date map: earliest report_date per campaign_id (INB-31 stopgap)
   const firstSeenMap = new Map<string, string>();
-  if (!firstSeenRes.error && firstSeenRes.data) {
-    for (const r of firstSeenRes.data) {
-      const cid = r.campaign_id as string;
-      const rd  = r.report_date as string;
-      if (!firstSeenMap.has(cid)) firstSeenMap.set(cid, rd);
-    }
+  for (const r of firstSeenData) {
+    if (!firstSeenMap.has(r.campaign_id)) firstSeenMap.set(r.campaign_id, r.report_date);
   }
 
   function toAdType(raw: string | null): 'SP' | 'SB' | 'SBV' {

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { fetchAll } from './fetch-all'
 import { CampaignRow } from './types'
 
 type RawPerf = {
@@ -19,20 +20,21 @@ async function fetchCampaignPerf(
   startDate: string,
   endDate: string
 ): Promise<{ perf: RawPerf[]; meta: Map<string, CampaignMeta> }> {
-  const [perfRes, metaRes] = await Promise.all([
-    supabaseAdmin
-      .from('sp_campaign_performance')
-      .select('campaign_id, ad_type, spend, sales_7d, orders_7d, clicks, impressions, ntb_orders_14d')
-      .eq('brand_id', brandId)
-      .gte('report_date', startDate)
-      .lte('report_date', endDate),
+  const [perf, metaRes] = await Promise.all([
+    fetchAll<RawPerf>(() =>
+      supabaseAdmin
+        .from('sp_campaign_performance')
+        .select('campaign_id, ad_type, spend, sales_7d, orders_7d, clicks, impressions, ntb_orders_14d')
+        .eq('brand_id', brandId)
+        .gte('report_date', startDate)
+        .lte('report_date', endDate)
+    ),
     supabaseAdmin
       .from('campaigns')
       .select('id, campaign_name, ad_type, targeting_type')
       .eq('brand_id', brandId),
   ])
 
-  if (perfRes.error) throw new Error(`fetchCampaignPerf failed: ${perfRes.error.message}`)
   if (metaRes.error) throw new Error(`fetchCampaignMeta failed: ${metaRes.error.message}`)
 
   const meta = new Map<string, CampaignMeta>()
@@ -40,7 +42,7 @@ async function fetchCampaignPerf(
     meta.set(c.id, c as CampaignMeta)
   }
 
-  return { perf: (perfRes.data ?? []) as unknown as RawPerf[], meta }
+  return { perf, meta }
 }
 
 function aggregateByCampaign(

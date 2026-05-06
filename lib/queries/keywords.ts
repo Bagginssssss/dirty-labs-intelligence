@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { fetchAll } from './fetch-all'
 import { SearchTermRow } from './types'
 
 // Harvest threshold constants — tuned from defaults (orders≥1, roas≥3) which
@@ -32,20 +33,21 @@ async function fetchSearchTerms(
   startDate: string,
   endDate: string
 ): Promise<{ rows: RawSTR[]; meta: Map<string, CampaignMeta> }> {
-  const [strRes, metaRes] = await Promise.all([
-    supabaseAdmin
-      .from('sp_search_term_report')
-      .select('campaign_id, customer_search_term, match_type, ad_type, spend, sales_7d, orders_7d, clicks, impressions')
-      .eq('brand_id', brandId)
-      .gte('report_date', startDate)
-      .lte('report_date', endDate),
+  const [rows, metaRes] = await Promise.all([
+    fetchAll<RawSTR>(() =>
+      supabaseAdmin
+        .from('sp_search_term_report')
+        .select('campaign_id, customer_search_term, match_type, ad_type, spend, sales_7d, orders_7d, clicks, impressions')
+        .eq('brand_id', brandId)
+        .gte('report_date', startDate)
+        .lte('report_date', endDate)
+    ),
     supabaseAdmin
       .from('campaigns')
       .select('id, campaign_name, ad_type, targeting_type')
       .eq('brand_id', brandId),
   ])
 
-  if (strRes.error) throw new Error(`fetchSearchTerms failed: ${strRes.error.message}`)
   if (metaRes.error) throw new Error(`fetchCampaignMeta failed: ${metaRes.error.message}`)
 
   const meta = new Map<string, CampaignMeta>()
@@ -53,7 +55,7 @@ async function fetchSearchTerms(
     meta.set(c.id, c as CampaignMeta)
   }
 
-  return { rows: (strRes.data ?? []) as unknown as RawSTR[], meta }
+  return { rows, meta }
 }
 
 function aggregateByTerm(
