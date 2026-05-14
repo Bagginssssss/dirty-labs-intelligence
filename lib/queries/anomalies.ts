@@ -145,14 +145,15 @@ export async function getAnomalies(
 
   // ── Check 3: Buy box drops ────────────────────────────────────────────────
   if (!bizRes.error) {
-    const asinLatestBb = new Map<string, number>()
-    // bizRes rows are not sorted — find min buy_box_pct per asin across window
+    // Use the most recent snapshot per ASIN — a recovered Buy Box should not fire.
+    const asinLatestBb = new Map<string, { bbPct: number; date: string }>()
     for (const row of (bizRes.data ?? [])) {
       if (row.buy_box_pct === null) continue
-      const id  = row.asin_id as string
-      const val = Number(row.buy_box_pct)
-      const cur = asinLatestBb.get(id)
-      if (cur === undefined || val < cur) asinLatestBb.set(id, val)
+      const id   = row.asin_id as string
+      const date = row.report_date as string
+      const val  = Number(row.buy_box_pct)
+      const cur  = asinLatestBb.get(id)
+      if (cur === undefined || date > cur.date) asinLatestBb.set(id, { bbPct: val, date })
     }
 
     const asinRes = await supabaseAdmin
@@ -163,7 +164,7 @@ export async function getAnomalies(
 
     const asinNameMap = new Map((asinRes.data ?? []).map(a => [a.id, { asin: a.asin, title: a.title }]))
 
-    for (const [asinId, bbPct] of asinLatestBb.entries()) {
+    for (const [asinId, { bbPct }] of asinLatestBb.entries()) {
       if (bbPct < 90) {
         const info = asinNameMap.get(asinId)
         anomalies.push({

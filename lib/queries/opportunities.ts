@@ -83,19 +83,18 @@ export async function getCompetitiveLandscape(
 
   const { data, error } = await supabaseAdmin
     .from('smartscout_subcategory_brands')
-    .select('brand_name, subcategory, estimated_revenue, market_share, snapshot_date')
+    .select('brand_name, subcategory, market_share, snapshot_date')
     .eq('brand_id', brandId)
     .eq('snapshot_date', date)
-    .order('estimated_revenue', { ascending: false })
+    .order('market_share', { ascending: false })
 
   if (error) throw new Error(`getCompetitiveLandscape failed: ${error.message}`)
 
   return (data ?? []).map(r => ({
-    brand_name:       r.brand_name as string,
-    subcategory:      (r.subcategory as string | null) ?? '',
-    estimated_revenue: r.estimated_revenue !== null ? Number(r.estimated_revenue) : null,
-    market_share:     r.market_share !== null ? Number(r.market_share) : null,
-    snapshot_date:    r.snapshot_date as string,
+    brand_name:    r.brand_name as string,
+    subcategory:   (r.subcategory as string | null) ?? '',
+    market_share:  r.market_share !== null ? Number(r.market_share) : null,
+    snapshot_date: r.snapshot_date as string,
   }))
 }
 
@@ -106,23 +105,21 @@ export async function getMarketShareByBrand(
 ): Promise<CompetitorRow[]> {
   const landscape = await getCompetitiveLandscape(brandId, snapshotDate)
 
-  const acc = new Map<string, { revenue: number; share_sum: number; share_count: number; date: string }>()
+  const acc = new Map<string, { share_sum: number; share_count: number; date: string }>()
   for (const row of landscape) {
     if (!acc.has(row.brand_name)) {
-      acc.set(row.brand_name, { revenue: 0, share_sum: 0, share_count: 0, date: row.snapshot_date })
+      acc.set(row.brand_name, { share_sum: 0, share_count: 0, date: row.snapshot_date })
     }
     const a = acc.get(row.brand_name)!
-    a.revenue += row.estimated_revenue ?? 0
     if (row.market_share !== null) { a.share_sum += row.market_share; a.share_count++ }
   }
 
   return Array.from(acc.entries())
     .map(([brand_name, a]) => ({
       brand_name,
-      subcategory:       'all',
-      estimated_revenue: a.revenue > 0 ? a.revenue : null,
-      market_share:      a.share_count > 0 ? a.share_sum / a.share_count : null,
-      snapshot_date:     a.date,
+      subcategory:  'all',
+      market_share: a.share_count > 0 ? a.share_sum / a.share_count : null,
+      snapshot_date: a.date,
     }))
-    .sort((a, b) => (b.estimated_revenue ?? 0) - (a.estimated_revenue ?? 0))
+    .sort((a, b) => (b.market_share ?? 0) - (a.market_share ?? 0))
 }

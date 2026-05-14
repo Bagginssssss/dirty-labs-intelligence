@@ -86,7 +86,6 @@ export interface OpportunityRow {
 export interface CompetitorRow {
   brand_name: string
   subcategory: string
-  estimated_revenue: number | null
   market_share: number | null
   snapshot_date: string
 }
@@ -100,6 +99,35 @@ export interface AnomalyItem {
   expected_value?: number
   delta_pct?: number
   note: string
+}
+
+export interface MonthlyAccountRow {
+  month: string
+  total_revenue: number
+  total_ppc_spend: number
+  ppc_sales: number
+  roas: number | null
+  mer: number | null
+  organic_revenue: number
+  /** Brand-wide NTB from Amazon Brand Analytics Customer Loyalty (authoritative). Use for CAC and acquisition analysis. */
+  ntb_customers_ba: number | null
+  /** CAC = total_ppc_spend / ntb_customers_ba. Null when BA data is absent. */
+  cac_ba: number | null
+  /** PPC-attributed NTB from derived_metrics_daily. ~28x undercount vs BA. PPC efficiency signal only — do NOT use for CAC. */
+  ntb_orders_ppc_attributed: number
+  total_orders: number
+}
+
+export interface ASINMonthRow {
+  month: string
+  asin_id: string
+  asin: string
+  title: string | null
+  revenue: number
+  sessions: number
+  units_ordered: number
+  buy_box_pct: number | null
+  cvr: number | null
 }
 
 export interface GoalProgressRow {

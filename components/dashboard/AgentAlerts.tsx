@@ -16,34 +16,46 @@ function severityRank(s: Severity): number {
 }
 
 export function AgentAlerts({ alerts, summary }: { alerts: Alert[]; summary: AlertSummary }) {
-  const [expanded, setExpanded] = useState(true);
+  const [top3Open, setTop3Open] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const sorted = [...alerts].sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
   const top3 = sorted.slice(0, 3);
 
   return (
     <section aria-label="Agent Alerts" className="mb-3 mt-3">
-      {/* Section label */}
+      {/* Section label — summary always visible; chevron collapses top 3 cards */}
       <div className="flex justify-between items-center mb-[7px] text-[9px] tracking-[0.15em]">
         <span className="text-[#3b82f6]">AGENT ALERTS</span>
-        <span className="text-[8px] text-[#475569] tracking-[0.1em]">
-          {summary.total} total
-          {summary.critical > 0 && <> · <span className="text-[#ef4444]">{summary.critical} critical</span></>}
-          {summary.warning > 0 && <> · <span className="text-[#f59e0b]">{summary.warning} warning{summary.warning === 1 ? '' : 's'}</span></>}
-          {summary.watch > 0 && <> · <span className="text-[#3b82f6]">{summary.watch} watch</span></>}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[8px] text-[#475569] tracking-[0.1em]">
+            {summary.total} total
+            {summary.critical > 0 && <> · <span className="text-[#ef4444]">{summary.critical} critical</span></>}
+            {summary.warning > 0 && <> · <span className="text-[#f59e0b]">{summary.warning} warning{summary.warning === 1 ? '' : 's'}</span></>}
+            {summary.watch > 0 && <> · <span className="text-[#3b82f6]">{summary.watch} watch</span></>}
+          </span>
+          <button
+            onClick={() => setTop3Open(v => !v)}
+            className="text-[#475569] hover:text-[#94a3b8] leading-none"
+            aria-label={top3Open ? 'Collapse top alerts' : 'Expand top alerts'}
+          >
+            {top3Open ? '↑' : '↓'}
+          </button>
+        </div>
       </div>
 
-      {/* Top 3 stacked cards */}
-      <div className="flex flex-col gap-[5px]">
-        {top3.length === 0 ? (
-          <div className="text-[10px] text-[#64748b] italic px-2 py-2">
-            No alerts in the current window. Agents are running.
-          </div>
-        ) : (
-          top3.map((a) => <AlertCard key={a.id} alert={a} />)
-        )}
-      </div>
+      {/* Top 3 stacked cards — collapsible, default open */}
+      {top3Open && (
+        <div className="flex flex-col gap-[5px]">
+          {top3.length === 0 ? (
+            <div className="text-[10px] text-[#64748b] italic px-2 py-2">
+              No alerts in the current window. Agents are running.
+            </div>
+          ) : (
+            top3.map((a) => <AlertCard key={a.id} alert={a} />)
+          )}
+        </div>
+      )}
 
       {/* All alerts expandable */}
       {alerts.length > 0 && (

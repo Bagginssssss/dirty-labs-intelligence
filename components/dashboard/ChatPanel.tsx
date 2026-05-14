@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { GripHorizontal } from 'lucide-react';
-import { resolvePeriod } from '@/lib/dashboard/period';
-import { fmtDate } from '@/lib/dashboard/format';
 
 type Message = {
   id: string;
@@ -13,23 +11,24 @@ type Message = {
   title?: string;
 };
 
+type RateLimit = {
+  limit: number;
+  remaining: number;
+  resetAt: string;
+};
+
 const MIN_HEIGHT = 200;
 const MAX_HEIGHT = 500;
 const DEFAULT_HEIGHT = 320;
 const STORAGE_KEY = 'dl:chat:height';
 
-const PRESETS = [
-  { key: 'last_7d',  label: 'Last 7d' },
-  { key: 'last_30d', label: 'Last 30d' },
-  { key: 'custom',   label: 'Custom' },
-];
-
 export function ChatPanel({ brandId }: { brandId: string }) {
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
-  const [analysisPeriod, setAnalysisPeriod] = useState<string>('last_7d');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [rateLimit, setRateLimit] = useState<RateLimit | null>(null);
+  const [, setTick] = useState(0);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -44,6 +43,12 @@ export function ChatPanel({ brandId }: { brandId: string }) {
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    if (!rateLimit || rateLimit.remaining > 5000) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [rateLimit]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -64,23 +69,6 @@ export function ChatPanel({ brandId }: { brandId: string }) {
     dragRef.current = null;
   }, [height]);
 
-  // Compute date range readout from active analysis period.
-  const resolved = resolvePeriod(analysisPeriod === 'custom' ? 'last_7d' : analysisPeriod, new Date());
-  const yearSuffix = new Date(resolved.end).getFullYear();
-  const dateRangeReadout = `${fmtDate(resolved.start)} – ${fmtDate(resolved.end)}, ${yearSuffix}`;
-
-  function setPeriod(key: string) {
-    if (key === 'custom') {
-      const r = prompt('Custom range (YYYY-MM-DD:YYYY-MM-DD)', '');
-      if (r && /^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/.test(r)) {
-        setAnalysisPeriod(r);
-        return;
-      }
-      return;
-    }
-    setAnalysisPeriod(key);
-  }
-
   async function send(prompt: string, kind: 'chat' | 'briefing' | 'anomaly' | 'opportunity' = 'chat', title?: string) {
     const trimmed = prompt.trim();
     if (!trimmed || busy) return;
@@ -97,13 +85,26 @@ export function ChatPanel({ brandId }: { brandId: string }) {
         body: JSON.stringify({
           brand_id: brandId,
           analysis_type: kind,
-          prompt: trimmed,
-          period: analysisPeriod,
-          start_date: resolved.start,
-          end_date: resolved.end,
+          query: trimmed,
           history: messages.slice(-6).map(({ role, content }) => ({ role, content })),
         }),
       });
+
+      if (res.status === 429) {
+        const errData = await res.json().catch(() => ({})) as { reset_at?: string };
+        if (errData.reset_at) {
+          setRateLimit({ limit: 30000, remaining: 0, resetAt: errData.reset_at });
+        }
+        const secsLeft = errData.reset_at
+          ? Math.max(0, Math.ceil((new Date(errData.reset_at).getTime() - Date.now()) / 1000))
+          : '?';
+        setMessages((m) => [...m, {
+          id: crypto.randomUUID(), role: 'assistant',
+          content: `⚠ Rate limited — wait ${secsLeft}s before retrying`,
+          ts: Date.now(),
+        }]);
+        return;
+      }
 
       if (!res.ok) {
         const text = await res.text().catch(() => 'Analysis request failed.');
@@ -114,6 +115,15 @@ export function ChatPanel({ brandId }: { brandId: string }) {
       }
 
       const data = await res.json();
+
+      if (data.rate_limit) {
+        setRateLimit({
+          limit:     data.rate_limit.limit,
+          remaining: data.rate_limit.remaining,
+          resetAt:   data.rate_limit.reset_at,
+        });
+      }
+
       let text = '';
       if (typeof data?.content === 'string') text = data.content;
       else if (Array.isArray(data?.content)) {
@@ -145,26 +155,7 @@ export function ChatPanel({ brandId }: { brandId: string }) {
       <div className="flex items-center gap-3 px-3 pt-2.5 pb-1.5 border-b border-[#1e1e2e]">
         <span className="text-[10px] tracking-[0.1em] text-[#3b82f6]">INTELLIGENCE · CHAT</span>
         <div className="flex-1" />
-        <div className="flex items-center gap-1">
-          {PRESETS.map((p) => {
-            const isActive = analysisPeriod === p.key
-              || (p.key === 'custom' && !PRESETS.some((pp) => pp.key === analysisPeriod && pp.key !== 'custom') && analysisPeriod !== 'last_7d' && analysisPeriod !== 'last_30d');
-            return (
-              <button
-                key={p.key}
-                onClick={() => setPeriod(p.key)}
-                className={`text-[8px] px-2 py-[3px] rounded-[3px] border transition-colors ${
-                  isActive
-                    ? 'bg-[#3b82f6]/15 border-[#3b82f6] text-[#3b82f6]'
-                    : 'bg-[#111113] border-[#1e1e2e] text-[#64748b] hover:text-[#94a3b8]'
-                }`}
-              >
-                {p.label}
-              </button>
-            );
-          })}
-          <span className="text-[8px] text-[#475569] ml-1.5">{dateRangeReadout}</span>
-        </div>
+        <span className="text-[8px] text-[#475569]">12-month rolling window</span>
       </div>
 
       {/* Quick action briefing buttons */}
@@ -196,7 +187,7 @@ export function ChatPanel({ brandId }: { brandId: string }) {
       <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[#111113] mx-3 my-2 rounded-[3px] p-2.5">
         {messages.length === 0 ? (
           <div className="text-[9px] text-[#64748b] leading-[1.5]">
-            Pick a quick action above, or ask anything about the account. Analysis uses the period selected at top right.
+            Ask anything about your account performance. The chat has access to the past 12 months of data across PPC, sales, customers, competitive landscape, and more.
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -218,6 +209,7 @@ export function ChatPanel({ brandId }: { brandId: string }) {
           className="flex-1 bg-[#111113] border border-[#1e1e2e] rounded-[3px] px-2 py-1.5 text-[10px] text-[#e2e8f0] placeholder:text-[#64748b] focus:outline-none focus:border-[#3b82f6]/40"
           disabled={busy}
         />
+        <RateLimitBadge rl={rateLimit} />
         <button
           type="submit"
           disabled={busy || !input.trim()}
@@ -241,6 +233,40 @@ export function ChatPanel({ brandId }: { brandId: string }) {
         </span>
       </div>
     </section>
+  );
+}
+
+function RateLimitBadge({ rl }: { rl: RateLimit | null }) {
+  if (!rl) return null;
+
+  const secsLeft = Math.max(0, Math.ceil((new Date(rl.resetAt).getTime() - Date.now()) / 1000));
+  const resetTime = new Date(rl.resetAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const used = rl.limit - rl.remaining;
+  const tooltip = `Tokens used: ${used.toLocaleString()}/${rl.limit.toLocaleString()} in current window. Resets at ${resetTime}`;
+
+  if (rl.remaining === 0 && secsLeft > 0) {
+    return (
+      <span title={tooltip} className="flex items-center gap-1 text-[8px] text-red-400 whitespace-nowrap select-none cursor-default">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+        Wait {secsLeft}s
+      </span>
+    );
+  }
+
+  if (rl.remaining < 5000 && secsLeft > 0) {
+    return (
+      <span title={tooltip} className="flex items-center gap-1 text-[8px] text-yellow-400 whitespace-nowrap select-none cursor-default">
+        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 flex-shrink-0" />
+        Slow · {secsLeft}s
+      </span>
+    );
+  }
+
+  return (
+    <span title={tooltip} className="flex items-center gap-1 text-[8px] text-emerald-400 whitespace-nowrap select-none cursor-default">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+      Ready
+    </span>
   );
 }
 

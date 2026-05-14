@@ -1,4 +1,4 @@
-import { MappedRow, RawRow, MapperContext, makeGetter, parseDate, parseNumeric } from './types'
+import { MappedRow, RawRow, MapperContext, makeGetter, parseDate, parseNumeric, normalizeSmartscoutSubcategory } from './types'
 
 export interface SmartscoutSubcategoryProductsRow extends MappedRow {
   snapshot_date: string | null
@@ -46,7 +46,9 @@ function mapOneRow(
   const parentAsinRaw = get('', 'Parent ASIN', 'parent_asin')
   const effectiveParentAsin = parentAsinRaw || asinRaw
   // Actual SmartScout header: "Primary Subcategory Name" → primary_subcategory_name
-  const subcategory = get('', 'Primary Subcategory Name', 'Primary Subcategory', 'Subcategory', 'subcategory') || null
+  const subcategory = normalizeSmartscoutSubcategory(
+    get('', 'Primary Subcategory Name', 'Primary Subcategory', 'Subcategory', 'subcategory')
+  )
 
   if (!asinRaw || !subcategory) return null
 
@@ -109,7 +111,10 @@ export function mapSmartscoutSubcategoryProducts(
   brandId: string,
   context?: MapperContext
 ): SmartscoutSubcategoryProductsRow[] {
-  const snapshotDate = context?.date_range_start ?? null
+  // Fall back to the CSV's own "Last Refreshed" date when the caller omits
+  // date_range_start (empty string from the upload form counts as omitted).
+  const fallback = rows[0] ? parseDate(makeGetter(rows[0])('', 'Last Refreshed')) : null
+  const snapshotDate = context?.date_range_start || fallback || null
 
   const mapped = rows
     .map(row => mapOneRow(row, brandId, snapshotDate))

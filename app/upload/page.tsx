@@ -11,12 +11,14 @@ interface IngestResult {
   rows_rejected?: number
   parse_errors?: string[]
   error?: string
+  granularity_detected?: string
 }
 
 export default function UploadPage() {
   const [brandId, setBrandId] = useState('')
   const [dateStart, setDateStart] = useState('')
   const [dateEnd, setDateEnd] = useState('')
+  const [subcategory, setSubcategory] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<IngestResult | null>(null)
@@ -34,6 +36,7 @@ export default function UploadPage() {
     body.append('brand_id', brandId)
     body.append('date_range_start', dateStart)
     body.append('date_range_end', dateEnd)
+    if (subcategory) body.append('subcategory', subcategory)
 
     try {
       const res = await fetch('/api/ingest', { method: 'POST', body })
@@ -91,6 +94,24 @@ export default function UploadPage() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
             </div>
+          </div>
+
+          {/* Subcategory — required for SmartScout Subcategory Brands reports */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Subcategory <span className="text-gray-400 font-normal">(SmartScout Subcategory Brands only)</span>
+            </label>
+            <select
+              value={subcategory}
+              onChange={e => setSubcategory(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
+            >
+              <option value="">— not applicable —</option>
+              <option value="dishwasher_detergent">Dishwasher Detergent</option>
+              <option value="laundry_detergent">Laundry Detergent</option>
+              <option value="laundry_stain_remover">Laundry Stain Remover</option>
+              <option value="toilet_bowl_cleaner">Toilet Bowl Cleaner</option>
+            </select>
           </div>
 
           {/* File input */}
@@ -159,6 +180,13 @@ export default function UploadPage() {
             ) : (
               <dl className="space-y-2 text-sm">
                 <Row label="Report type" value={result.report_type ?? '—'} />
+                {result.granularity_detected && (
+                  <Row
+                    label="Detected as"
+                    value={result.granularity_detected}
+                    highlight={result.granularity_detected === 'monthly' ? 'green' : undefined}
+                  />
+                )}
                 <Row label="Target table" value={result.table ?? '—'} />
                 <Row label="Rows received" value={String(result.rows_received ?? 0)} />
                 <Row

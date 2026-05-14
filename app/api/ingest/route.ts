@@ -36,10 +36,11 @@ const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   subscribe_and_save:              'brand_id,asin_id,sku,report_date',
   search_query_performance:        'brand_id,search_query,report_date',
   smartscout_subcategory_products: 'brand_id,parent_asin,subcategory,snapshot_date',
-  smartscout_subcategory_brands:   'brand_id,brand_name,snapshot_date',
-  virtual_bundle_sales:            'brand_id,bundle_asin,sale_date',
-  virtual_bundle_sales_daily:      'brand_id,bundle_asin,sale_date',
-  virtual_bundle_sales_snapshots:  'brand_id,bundle_asin,snapshot_date',
+  smartscout_subcategory_brands:   'brand_id,brand_name,subcategory,snapshot_date',
+  virtual_bundle_sales:                 'brand_id,bundle_asin,sale_date',
+  virtual_bundle_sales_daily:           'brand_id,bundle_asin,sale_date',
+  virtual_bundle_sales_snapshots:       'brand_id,bundle_asin,snapshot_date',
+  brand_analytics_customer_loyalty:     'brand_id,period_end_date,granularity',
 }
 
 // ─── FK resolution helpers ────────────────────────────────────────────────────
@@ -260,6 +261,7 @@ export async function POST(request: Request) {
     const reportTypeOverride = (formData.get('report_type') as string) ?? ''
     const dateRangeStart = (formData.get('date_range_start') as string) ?? ''
     const dateRangeEnd = (formData.get('date_range_end') as string) ?? ''
+    const subcategoryField = (formData.get('subcategory') as string) || undefined
 
     if (!file) return Response.json({ error: 'No file provided' }, { status: 400 })
     if (!brandId) return Response.json({ error: 'brand_id is required' }, { status: 400 })
@@ -292,6 +294,13 @@ export async function POST(request: Request) {
       )
     }
 
+    if (reportType === 'smartscout_subcategory_brands' && !subcategoryField) {
+      return Response.json(
+        { error: 'Subcategory required for Subcategory Brands reports. Select one before uploading.' },
+        { status: 400 }
+      )
+    }
+
     // 3. Map rows
     // Batch mappers receive all rows at once (e.g. for cross-row deduplication).
     // Row-by-row mappers are applied via flatMap (handles single or array returns).
@@ -301,7 +310,7 @@ export async function POST(request: Request) {
       return Response.json({ error: `No mapper for report type: ${reportType}` }, { status: 400 })
     }
 
-    const mapperContext = { date_range_start: dateRangeStart, date_range_end: dateRangeEnd, hint: detectionHint }
+    const mapperContext = { date_range_start: dateRangeStart, date_range_end: dateRangeEnd, hint: detectionHint, subcategory: subcategoryField, filename: file.name }
     const mappedRows = batchMapper
       ? batchMapper(parseResult.rows, brandId, mapperContext)
       : parseResult.rows
@@ -348,6 +357,11 @@ export async function POST(request: Request) {
       ingestion_method: 'csv_upload',
     })
 
+    // Surface detected granularity for BA Customer Loyalty uploads so operator can verify.
+    const granularityDetected = (reportType === 'brand_analytics_customer_loyalty' && mappedRows.length > 0)
+      ? (mappedRows[0] as Record<string, unknown>).granularity as string
+      : undefined
+
     return Response.json({
       status: 'ok',
       report_type: reportType,
@@ -356,6 +370,7 @@ export async function POST(request: Request) {
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
       parse_errors: ingestErrors,
+      ...(granularityDetected ? { granularity_detected: granularityDetected } : {}),
     })
 
   } catch (err) {

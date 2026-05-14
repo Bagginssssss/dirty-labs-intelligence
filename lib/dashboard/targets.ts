@@ -85,3 +85,55 @@ export function getMonthlyTarget(
     case 'ntb':   return NTB_TARGETS_2026[monthIndex];
   }
 }
+
+/** All calendar months (year+monthIndex pairs) whose first day falls within [start, end]. */
+export function monthsInRange(
+  start: string,
+  end: string,
+): Array<{ year: number; monthIndex: MonthIndex }> {
+  const startD = new Date(start + 'T00:00:00Z');
+  const endD   = new Date(end   + 'T00:00:00Z');
+  const result: Array<{ year: number; monthIndex: MonthIndex }> = [];
+  const cur = new Date(Date.UTC(startD.getUTCFullYear(), startD.getUTCMonth(), 1));
+  while (cur <= endD) {
+    result.push({ year: cur.getUTCFullYear(), monthIndex: cur.getUTCMonth() as MonthIndex });
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
+  }
+  return result;
+}
+
+/**
+ * Sum an additive target (sales, spend, ntb) across every month in the range.
+ * Months with no target defined (e.g. 2025 months before targets were set)
+ * are skipped; returns null only when no month has a target.
+ */
+export function sumMonthlyTargets(
+  months: Array<{ year: number; monthIndex: MonthIndex }>,
+  metric: 'sales' | 'spend' | 'ntb',
+): number | null {
+  let sum = 0;
+  let found = false;
+  for (const m of months) {
+    const t = getMonthlyTarget(metric, m.year, m.monthIndex);
+    if (t !== null) { sum += t; found = true; }
+  }
+  return found ? sum : null;
+}
+
+/**
+ * Spend-weighted blended ROAS target across multiple months.
+ * Equivalent to implied_ppc_sales_target_sum / spend_target_sum — the correct
+ * way to blend ratio targets without distorting by averaging.
+ */
+export function blendedRoasTarget(
+  months: Array<{ year: number; monthIndex: MonthIndex }>,
+): number | null {
+  let numer = 0;
+  let denom = 0;
+  for (const m of months) {
+    const r = getMonthlyTarget('roas',  m.year, m.monthIndex);
+    const s = getMonthlyTarget('spend', m.year, m.monthIndex);
+    if (r !== null && s !== null) { numer += r * s; denom += s; }
+  }
+  return denom > 0 ? numer / denom : null;
+}

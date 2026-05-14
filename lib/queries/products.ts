@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { fetchAll } from './fetch-all'
-import { ASINRow, SSRow } from './types'
+import { ASINRow, ASINMonthRow, SSRow } from './types'
 
 type AsinMeta = { id: string; asin: string; title: string | null }
 
@@ -76,6 +76,67 @@ export async function getASINPerformance(
       cvr,
     }
   }).sort((a, b) => b.revenue - a.revenue)
+}
+
+// Groups business_report by calendar month so the LLM can answer month-specific
+// questions (e.g. "how did Signature 80 perform in April vs March?").
+// business_report stores one row per (brand, ASIN, report_month) already —
+// this function just preserves that granularity instead of collapsing it.
+export async function getASINPerformanceByMonth(
+  brandId: string,
+  startDate: string,
+  endDate: string
+): Promise<ASINMonthRow[]> {
+  type BrRawWithDate = BrRaw & { report_date: string }
+
+  const [brRows, asinMap] = await Promise.all([
+    fetchAll<BrRawWithDate>(() =>
+      supabaseAdmin
+        .from('business_report')
+        .select('asin_id, sessions_total, units_ordered, buy_box_pct, ordered_product_sales, total_order_items, report_date')
+        .eq('brand_id', brandId)
+        .gte('report_date', startDate)
+        .lte('report_date', endDate)
+    ),
+    fetchAsinMeta(brandId),
+  ])
+
+  const acc = new Map<string, {
+    asin_id: string; month: string; sessions: number; units_ordered: number
+    revenue: number; buy_box_sum: number; buy_box_count: number
+  }>()
+
+  for (const row of brRows) {
+    const month = row.report_date.slice(0, 7)
+    const key   = `${row.asin_id}::${month}`
+    if (!acc.has(key)) {
+      acc.set(key, { asin_id: row.asin_id, month, sessions: 0, units_ordered: 0, revenue: 0, buy_box_sum: 0, buy_box_count: 0 })
+    }
+    const a = acc.get(key)!
+    a.sessions       += Number(row.sessions_total)         || 0
+    a.units_ordered  += Number(row.units_ordered)          || 0
+    a.revenue        += Number(row.ordered_product_sales)  || 0
+    if (row.buy_box_pct !== null) { a.buy_box_sum += Number(row.buy_box_pct); a.buy_box_count++ }
+  }
+
+  return Array.from(acc.values())
+    .filter(a => asinMap.has(a.asin_id))
+    .map(a => {
+      const meta  = asinMap.get(a.asin_id)!
+      const bbPct = a.buy_box_count > 0 ? a.buy_box_sum / a.buy_box_count : null
+      return {
+        month:         a.month,
+        asin_id:       a.asin_id,
+        asin:          meta.asin,
+        title:         meta.title,
+        revenue:       a.revenue,
+        sessions:      a.sessions,
+        units_ordered: a.units_ordered,
+        buy_box_pct:   bbPct,
+        cvr:           a.sessions > 0 ? a.units_ordered / a.sessions : null,
+      }
+    })
+    .sort((a, b) => a.month.localeCompare(b.month) || b.revenue - a.revenue)
 }
 
 type SsRaw = {

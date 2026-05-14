@@ -2,10 +2,16 @@
 
 import { useState } from 'react';
 import type {
-  BusinessHealthData, CVRBuyBoxRow, MarketShareView, SSCards, BundleCards, SubcategoryRankRow,
+  BusinessHealthData, CVRBuyBoxRow, MarketShareRow, MarketShareView, SSCards, BundleCards, SubcategoryRankRow,
   VirtualBundleData,
 } from '@/lib/dashboard/types';
-import { fmtPct, fmtPctSigned, fmtRank, fmtUSDCompact, fmtIntCompact } from '@/lib/dashboard/format';
+import { fmtPct, fmtPctSigned, fmtRank, fmtUSDCompact, fmtIntCompact } from '@/lib/dashboard/format'
+
+function fmtIsoDate(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  return `${months[parseInt(m) - 1]} ${parseInt(d)}, ${y}`
+};
 
 export function BusinessHealth({
   data, periodLabel, virtualBundles,
@@ -18,7 +24,15 @@ export function BusinessHealth({
         BUSINESS HEALTH
       </h3>
 
-      <SubLabel>SUBCATEGORY RANK <Tag>SmartScout · SP-API pending</Tag></SubLabel>
+      <SubLabel>
+        SUBCATEGORY RANK
+        <Tag>
+          SmartScout · {(() => {
+            const d = data.subcategoryRanks.filter(r => r.rank !== null).map(r => r.snapshotDate).sort().at(-1)
+            return d ? `as of ${fmtIsoDate(d)}` : 'No data'
+          })()}
+        </Tag>
+      </SubLabel>
       {data.subcategoryRanks.map((r) => <SubcategoryRow key={r.key} row={r} />)}
 
       <SubLabel>MARKET SHARE</SubLabel>
@@ -60,20 +74,34 @@ function Tag({ children }: { children: React.ReactNode }) {
 }
 
 function SubcategoryRow({ row }: { row: SubcategoryRankRow }) {
+  const changeColor =
+    row.rankChange == null ? 'text-[#475569]'
+    : row.rankChange > 0 ? 'text-[#10b981]'
+    : row.rankChange < 0 ? 'text-[#ef4444]'
+    : 'text-[#475569]';
+  const changeLabel =
+    row.rankChange == null ? '—'
+    : row.rankChange > 0 ? `↑ ${row.rankChange}`
+    : row.rankChange < 0 ? `↓ ${Math.abs(row.rankChange)}`
+    : '—';
+  const changeTitle = row.priorSnapshotDate
+    ? `Rank change since ${row.priorSnapshotDate}`
+    : 'Awaiting next snapshot for trend';
+
   return (
     <div className="flex justify-between items-center py-[3px] border-b border-[#1e1e2e]/50 last:border-0">
       <div className="min-w-0">
         <div className="text-[9px] text-[#94a3b8] truncate">{row.label}</div>
-        {row.topAsins.length > 0 && (
-          <div className="text-[8px] text-[#475569] truncate">{row.topAsins.join(' · ')}</div>
+        {row.topTitle && (
+          <div className="text-[8px] text-[#475569] truncate">{row.topTitle}</div>
         )}
       </div>
       <div className="text-right shrink-0 ml-2">
         {row.rank != null ? (
           <>
             <div className="text-[12px] font-medium text-[#3b82f6] leading-none">{fmtRank(row.rank)}</div>
-            <div className="text-[8px] text-[#475569] mt-[1px]">
-              {row.revenuePerMonth != null ? `${fmtUSDCompact(row.revenuePerMonth, 0)}/mo` : '—'}
+            <div className={`text-[8px] mt-[1px] ${changeColor}`} title={changeTitle}>
+              {changeLabel}
             </div>
           </>
         ) : (
@@ -91,12 +119,7 @@ function MarketShareSection({
 }) {
   const [active, setActive] = useState<MarketShareView['subcategory']>(defaultKey);
   const view = views.find((v) => v.subcategory === active) ?? views[0];
-
-  // Most recent snapshot date across any view that has data — shown in empty state copy
-  const anySnapshotDate = views.reduce<string | null>((best, v) => {
-    if (v.rows.length > 0 && v.snapshotDate && (!best || v.snapshotDate > best)) return v.snapshotDate;
-    return best;
-  }, null);
+  const isEmpty = !view || view.totalBrands === 0;
 
   return (
     <div>
@@ -115,23 +138,64 @@ function MarketShareSection({
           </button>
         ))}
       </div>
-      {!view || view.rows.length === 0 ? (
-        <div>
-          <div className="text-[9px] text-[#475569]">Upload report</div>
-          {anySnapshotDate && (
-            <div className="text-[8px] text-[#2a2a3a] mt-[1px]">as of {anySnapshotDate}</div>
-          )}
-        </div>
+      {isEmpty ? (
+        <div className="text-[9px] text-[#475569]">Upload report</div>
       ) : (
-        view.rows.slice(0, 6).map((r) => <MarketShareBar key={r.brand} row={r} />)
+        <>
+          {/* Dirty Labs row pinned at top */}
+          {view.dlRow ? (
+            <DLPinnedRow row={view.dlRow} rank={view.dlRank} total={view.totalBrands} subcategory={view.subcategory} />
+          ) : (
+            <div className="text-[8px] text-[#475569] italic py-[2px]">
+              Dirty Labs not ranked in {view.label}
+            </div>
+          )}
+          <div className="border-t border-[#1e1e2e] my-[3px]" />
+          {/* Top 10 competitors */}
+          {view.rows.map((r, i) => (
+            <MarketShareBar key={`${view.subcategory}::${r.brand}::${i}`} row={r} />
+          ))}
+          <div className="text-[8px] text-[#2a2a3a] mt-[2px]">as of {fmtIsoDate(view.snapshotDate)}</div>
+        </>
       )}
     </div>
   );
 }
 
-function MarketShareBar({ row }: { row: { brand: string; share: number; mom: number | null; isOurs: boolean } }) {
-  const brandColor = row.isOurs ? 'text-[#10b981]' : 'text-[#94a3b8]';
-  const barColor = row.isOurs ? 'bg-[#10b981]' : 'bg-[#475569]';
+function DLPinnedRow({
+  row, rank, total, subcategory,
+}: {
+  row: MarketShareRow; rank: number | null; total: number; subcategory: string;
+}) {
+  const momColor =
+    row.mom == null ? 'text-[#64748b]'
+    : row.mom > 0 ? 'text-[#10b981]'
+    : row.mom < 0 ? 'text-[#ef4444]'
+    : 'text-[#64748b]';
+  return (
+    <div>
+      <div className="flex items-center gap-[6px] py-[2px]">
+        <span className="text-[9px] w-[140px] shrink-0 truncate text-[#10b981]" title={row.brand}>
+          {row.brand}
+        </span>
+        <div className="flex-1 h-[3px] bg-[#1e1e2e] rounded-[2px] overflow-hidden">
+          <div className="h-[3px] rounded-[2px] bg-[#10b981]" style={{ width: `${Math.max(2, row.share * 100)}%` }} />
+        </div>
+        <span className="text-[8px] text-[#64748b] min-w-[28px] text-right">{Math.round(row.share * 100)}%</span>
+        <span className={`text-[8px] min-w-[32px] text-right ${momColor}`}>
+          {row.mom == null ? '—' : fmtPctSigned(row.mom, 1)}
+        </span>
+      </div>
+      {rank !== null && (
+        <div className="text-[7px] text-[#475569] pl-[3px] mb-[2px]">
+          #{rank} of {total} brands in {subcategory.replace(/_/g, ' ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MarketShareBar({ row }: { row: MarketShareRow }) {
   const momColor =
     row.mom == null ? 'text-[#64748b]'
     : row.mom > 0 ? 'text-[#10b981]'
@@ -139,9 +203,9 @@ function MarketShareBar({ row }: { row: { brand: string; share: number; mom: num
     : 'text-[#64748b]';
   return (
     <div className="flex items-center gap-[6px] py-[2px]">
-      <span className={`text-[9px] w-[140px] shrink-0 truncate ${brandColor}`} title={row.brand}>{row.brand}</span>
+      <span className="text-[9px] w-[140px] shrink-0 truncate text-[#94a3b8]" title={row.brand}>{row.brand}</span>
       <div className="flex-1 h-[3px] bg-[#1e1e2e] rounded-[2px] overflow-hidden">
-        <div className={`h-[3px] rounded-[2px] ${barColor}`} style={{ width: `${Math.max(2, row.share * 100)}%` }} />
+        <div className="h-[3px] rounded-[2px] bg-[#475569]" style={{ width: `${Math.max(2, row.share * 100)}%` }} />
       </div>
       <span className="text-[8px] text-[#64748b] min-w-[28px] text-right">{Math.round(row.share * 100)}%</span>
       <span className={`text-[8px] min-w-[32px] text-right ${momColor}`}>
@@ -161,7 +225,7 @@ function CVRBuyBoxTable({ rows }: { rows: CVRBuyBoxRow[] }) {
         <tr className="text-left">
           <th className="text-[8px] tracking-[0.05em] text-[#3b82f6] py-[2px] px-1 border-b border-[#1e1e2e]">PRODUCT</th>
           <th className="text-[8px] tracking-[0.05em] text-[#3b82f6] py-[2px] px-1 border-b border-[#1e1e2e]">CVR</th>
-          <th className="text-[8px] tracking-[0.05em] text-[#3b82f6] py-[2px] px-1 border-b border-[#1e1e2e]">VS AVG</th>
+          <th className="text-[8px] tracking-[0.05em] text-[#3b82f6] py-[2px] px-1 border-b border-[#1e1e2e]">VS PRIOR</th>
           <th className="text-[8px] tracking-[0.05em] text-[#3b82f6] py-[2px] px-1 border-b border-[#1e1e2e]">BUY BOX</th>
         </tr>
       </thead>
@@ -181,10 +245,14 @@ function CVRRow({ row }: { row: CVRBuyBoxRow }) {
     row.cvrTrend === 'above' ? '↑'
     : row.cvrTrend === 'below' ? '↓'
     : '→';
-  const cvrSuffix =
-    row.cvrTrend === 'above' && row.cvr > 0.6 ? ' top'
-    : row.cvrTrend === 'below' && row.cvr < 0.25 ? ' low'
-    : '';
+  // Show pp delta with sign; fall back to em-dash when no prior data
+  const deltaLabel =
+    row.cvrDelta === null ? '—'
+    : `${row.cvrDelta >= 0 ? '+' : ''}${(row.cvrDelta * 100).toFixed(1)}pp`;
+  const deltaTitle =
+    row.cvrDelta !== null
+      ? `${deltaLabel} CVR vs ${row.priorPeriodLabel}`
+      : `No prior-period data (${row.priorPeriodLabel})`;
   const bbColor =
     row.buyBox >= 0.95 ? 'text-[#10b981]'
     : row.buyBox >= 0.90 ? 'text-[#f59e0b]'
@@ -194,7 +262,7 @@ function CVRRow({ row }: { row: CVRBuyBoxRow }) {
     <tr>
       <td className="py-[3px] px-1 text-[#94a3b8] border-b border-[#1e1e2e]/30">{row.asinShortName}</td>
       <td className={`py-[3px] px-1 border-b border-[#1e1e2e]/30 ${cvrColor}`}>{fmtPct(row.cvr, 1)}</td>
-      <td className={`py-[3px] px-1 border-b border-[#1e1e2e]/30 ${cvrColor}`}>{cvrArrow}{cvrSuffix}</td>
+      <td className={`py-[3px] px-1 border-b border-[#1e1e2e]/30 ${cvrColor}`} title={deltaTitle}>{cvrArrow} {deltaLabel}</td>
       <td className={`py-[3px] px-1 border-b border-[#1e1e2e]/30 ${bbColor}`}>{fmtPct(row.buyBox, 1)}{bbMarker}</td>
     </tr>
   );

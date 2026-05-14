@@ -19,6 +19,7 @@ import type {
   Domain,
   GoalCard,
   IngestStatus,
+  MarketShareRow,
   MarketShareView,
   PPCSnapshot,
   PPCStatRow,
@@ -33,9 +34,10 @@ import type {
 } from './types';
 import { fetchAll } from '@/lib/queries/fetch-all';
 import type { ResolvedPeriod } from './period';
+import { priorPeriod } from './period';
 
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { getMonthlyTarget, AOV_TARGET, CAC_TARGET, MER_TARGET } from './targets';
+import { getMonthlyTarget, monthsInRange, sumMonthlyTargets, blendedRoasTarget, AOV_TARGET, CAC_TARGET, MER_TARGET } from './targets';
 import type { MonthIndex } from './targets';
 import { fmtUSDCompact, fmtUSD, fmtRoas, fmtIntCompact, fmtPct, fmtPctSigned } from './format';
 import { getAccountSummary } from '@/lib/queries/account';
@@ -53,14 +55,6 @@ export const BRAND_ID = '47a96175-ed58-4104-a2ff-c925d6143309';
 /* -------------------------------------------------------------------------- */
 
 async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
-  const endDate = new Date(period.end + 'T00:00:00Z');
-  const year = endDate.getUTCFullYear();
-  const monthIndex = endDate.getUTCMonth() as MonthIndex;
-  const m = String(monthIndex + 1).padStart(2, '0');
-  const monthStart = `${year}-${m}-01`;
-  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-  const monthEnd = `${year}-${m}-${String(lastDay).padStart(2, '0')}`;
-
   type Row = Record<string, unknown>;
   const sumRows = (arr: Row[], field: string): number =>
     arr.reduce((acc, r) => acc + (Number(r[field]) || 0), 0);
@@ -71,27 +65,30 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
     { data: baRows },
     sbGoalRes,
   ] = await Promise.all([
-    // Derived metrics (PPC spend, ROAS, MER, S&S, NTB fallback)
+    // Derived metrics — full period range so quarters aggregate Jan+Feb+Mar etc.
     supabaseAdmin
       .from('derived_metrics_daily')
       .select('total_revenue, total_ppc_spend, total_ppc_sales, ntb_orders, ss_revenue, metric_date')
       .eq('brand_id', BRAND_ID)
-      .gte('metric_date', monthStart)
-      .lte('metric_date', monthEnd),
+      .gte('metric_date', period.start)
+      .lte('metric_date', period.end),
     // Business report: correct AOV denominator is total_order_items (not total_orders)
     supabaseAdmin
       .from('business_report_daily')
       .select('ordered_product_sales, total_order_items, report_date')
       .eq('brand_id', BRAND_ID)
-      .gte('report_date', monthStart)
-      .lte('report_date', monthEnd),
-    // Brand Analytics NTB — try BA source first; fall back to derived PPC NTB
+      .gte('report_date', period.start)
+      .lte('report_date', period.end),
+    // Brand Analytics NTB — monthly rows preferred; weekly rows used for short windows.
+    // Monthly rows are correct for calendar month/quarter/YTD views. Weekly rows
+    // cover last_7d and other sub-monthly periods where monthly rows fall outside range.
     supabaseAdmin
       .from('brand_analytics_customer_loyalty')
-      .select('new_to_brand_customers, report_date')
+      .select('ntb_customers, period_end_date, granularity')
       .eq('brand_id', BRAND_ID)
-      .gte('report_date', monthStart)
-      .lte('report_date', monthEnd),
+      .gte('period_end_date', period.start)
+      .lte('period_end_date', period.end)
+      .order('period_end_date', { ascending: false }),
     // Earliest SB/SBV row — used to flag SP-only goal cards when period predates coverage
     supabaseAdmin
       .from('sp_campaign_performance')
@@ -102,13 +99,19 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       .limit(1),
   ]);
 
-  const sbGoalFrom   = (!sbGoalRes.error && (sbGoalRes.data?.[0]?.report_date as string | undefined)) || null;
-  const sbGoalComplete = sbGoalFrom !== null && monthStart >= sbGoalFrom;
-  const spOnlyTag    = sbGoalComplete ? undefined : 'SP only';
+  const sbGoalFrom     = (!sbGoalRes.error && (sbGoalRes.data?.[0]?.report_date as string | undefined)) || null;
+  const sbGoalComplete = sbGoalFrom !== null && period.start >= sbGoalFrom;
+  const spOnlyTag      = sbGoalComplete ? undefined : 'SP only';
 
   const typedDmd = (dmdRows ?? []) as unknown as Row[];
   const typedBr  = (brRows  ?? []) as unknown as Row[];
-  const typedBa  = (baRows  ?? []) as unknown as Row[];
+
+  type BaRow = { ntb_customers: number | null; granularity: string };
+  const allBaRows = (baRows ?? []) as unknown as BaRow[];
+
+  // Prefer monthly BA rows (calendar-aligned); fall back to weekly for short windows.
+  const monthlyBaRows = allBaRows.filter(r => r.granularity === 'monthly');
+  const baRowsToUse   = monthlyBaRows.length > 0 ? monthlyBaRows : allBaRows.filter(r => r.granularity === 'weekly');
 
   const totalRevenue  = sumRows(typedDmd, 'total_revenue');
   const totalSpend    = sumRows(typedDmd, 'total_ppc_spend');
@@ -120,21 +123,30 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
   const totalItems = sumRows(typedBr, 'total_order_items');
   const actualAov  = totalItems > 0 ? totalSales / totalItems : null;
 
-  // NTB: prefer BA source; fall back to derived PPC NTB
-  const baNtb      = sumRows(typedBa, 'new_to_brand_customers');
+  // NTB: prefer BA source (authoritative); fall back to derived PPC NTB
+  const baNtb      = baRowsToUse.reduce((sum, r) => sum + (Number(r.ntb_customers) || 0), 0);
   const derivedNtb = sumRows(typedDmd, 'ntb_orders');
-  const useBaSource = typedBa.length > 0 && baNtb > 0;
+  const useBaSource = baRowsToUse.length > 0 && baNtb > 0;
   const totalNtb    = useBaSource ? baNtb : derivedNtb;
+  if (!useBaSource && derivedNtb > 0) console.warn('[dashboard] NTB falling back to PPC-attributed; upload BA Customer Loyalty report');
   const ntbSourceTag = useBaSource ? 'BA' : 'BA pending';
 
   const actualRoas = totalSpend > 0 ? totalPpcSales / totalSpend : null;
   const actualMer  = totalSpend > 0 ? totalRevenue  / totalSpend : null;
   const actualCac  = totalNtb > 0   ? totalSpend   / totalNtb    : null;
 
-  const salesTarget = getMonthlyTarget('sales', year, monthIndex);
-  const spendTarget = getMonthlyTarget('spend', year, monthIndex);
-  const roasTarget  = getMonthlyTarget('roas',  year, monthIndex);
-  const ntbTarget   = getMonthlyTarget('ntb',   year, monthIndex);
+  // Multi-month target aggregation: sum additive targets, blend ratio targets.
+  const months      = monthsInRange(period.start, period.end);
+  const salesTarget = sumMonthlyTargets(months, 'sales');
+  const spendTarget = sumMonthlyTargets(months, 'spend');
+  const ntbTarget   = sumMonthlyTargets(months, 'ntb');
+  const roasTarget  = blendedRoasTarget(months);
+
+  // Partial goal coverage: some months in range have no targets (e.g. 2025 months).
+  const monthsWithTargets = months.filter(m => getMonthlyTarget('sales', m.year, m.monthIndex) !== null);
+  const goalWarning = monthsWithTargets.length > 0 && monthsWithTargets.length < months.length
+    ? `Goal targets missing for ${months.length - monthsWithTargets.length} of ${months.length} months in this period`
+    : undefined;
 
   const varPct = (actual: number | null, target: number | null): number | null =>
     actual !== null && target !== null && target !== 0
@@ -162,6 +174,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       variance: varPct(totalRevenue, salesTarget),
       pacing: pace(totalRevenue, salesTarget),
       freshnessDate,
+      warning: goalWarning,
     },
     {
       id: 'ad_spend',
@@ -172,6 +185,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       pacing: pace(totalSpend, spendTarget),
       freshnessDate,
       sourceTag: spOnlyTag,
+      warning: goalWarning,
     },
     {
       id: 'ppc_roas',
@@ -182,6 +196,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       pacing: pace(actualRoas, roasTarget),
       freshnessDate,
       sourceTag: spOnlyTag,
+      warning: goalWarning,
     },
     {
       id: 'mer',
@@ -211,6 +226,7 @@ async function loadGoalRail(period: ResolvedPeriod): Promise<GoalCard[]> {
       pacing:   useBaSource ? pace(totalNtb, ntbTarget)   : null,
       freshnessDate,
       sourceTag: ntbSourceTag,
+      warning: goalWarning,
     },
     {
       id: 'cac',
@@ -548,7 +564,10 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
   const priorWeekStartStr = new Date(bundleEndMs - 14 * 86_400_000).toISOString().slice(0, 10);
   const priorWeekEndStr   = new Date(bundleEndMs - 8 * 86_400_000).toISOString().slice(0, 10);
 
-  // ── 5D: prior month range ──────────────────────────────────────────────────
+  // ── 5C: same-length prior window for CVR/Buy Box comparison ──────────────────
+  const cvrPriorPeriod = priorPeriod(period);
+
+  // ── 5D: prior month range (S&S and DMD penetration MoM) ──────────────────────
   const periodYear  = Number(startDate.slice(0, 4));
   const periodMonth = Number(startDate.slice(5, 7));
   const priorYear   = periodMonth === 1 ? periodYear - 1 : periodYear;
@@ -556,9 +575,18 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
   const priorMonthStart = `${priorYear}-${String(priorMonth).padStart(2, '0')}-01`;
   const priorMonthEnd   = new Date(Date.UTC(periodYear, periodMonth - 1, 0)).toISOString().slice(0, 10);
 
+  // Hoisted so the type can be used in the fetchAll<T> call below
+  type ScBrandRow = {
+    brand_name: string;
+    subcategory: string | null;
+    market_share: number | null;
+    market_share_change: number | null;
+    snapshot_date: string;
+  };
+
   const [
     scProductsRes,
-    scBrandsRes,
+    scBrands,
     asinPerf,
     priorAsinPerf,
     ssCurrentRes,
@@ -576,22 +604,23 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
     // 5A: Dirty Labs products only
     supabaseAdmin
       .from('smartscout_subcategory_products')
-      .select('asin, subcategory, primary_subcategory_rank, est_monthly_revenue, snapshot_date')
+      .select('asin, subcategory, primary_subcategory_rank, est_monthly_revenue, snapshot_date, title')
       .eq('brand_id', BRAND_ID)
       .ilike('brand_name', '%dirty labs%')
       .order('snapshot_date', { ascending: false }),
 
-    // 5B: All brands at latest snapshot
-    supabaseAdmin
-      .from('smartscout_subcategory_brands')
-      .select('brand_name, market_share, market_share_change, snapshot_date')
-      .eq('brand_id', BRAND_ID)
-      .order('snapshot_date', { ascending: false })
-      .limit(200),
+    // 5B: All brands — paginated via fetchAll (no row cap, supports large subcategories)
+    fetchAll<ScBrandRow>(() =>
+      supabaseAdmin
+        .from('smartscout_subcategory_brands')
+        .select('brand_name, subcategory, market_share, market_share_change, snapshot_date')
+        .eq('brand_id', BRAND_ID)
+        .order('snapshot_date', { ascending: false })
+    ),
 
     // 5C: CVR/Buy Box — current and prior period (same-length window)
     getASINPerformance(BRAND_ID, startDate, endDate),
-    getASINPerformance(BRAND_ID, priorMonthStart, priorMonthEnd),
+    getASINPerformance(BRAND_ID, cvrPriorPeriod.start, cvrPriorPeriod.end),
 
     // 5D: S&S current month
     supabaseAdmin
@@ -689,6 +718,7 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
     primary_subcategory_rank: number | null;
     est_monthly_revenue: number | null;
     snapshot_date: string;
+    title: string | null;
   };
   const scProds = (scProductsRes.data ?? []) as unknown as ScProdRow[];
 
@@ -709,7 +739,7 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
 
   const subcategoryRanks: SubcategoryRankRow[] = SC_DEFS.map(({ key, label }) => {
     const rows = scByKey.get(key) ?? [];
-    if (rows.length === 0) return { key, label, rank: null, revenuePerMonth: null, topAsins: [], snapshotDate: endDate };
+    if (rows.length === 0) return { key, label, rank: null, rankChange: null, priorSnapshotDate: null, topTitle: null, snapshotDate: endDate };
 
     const latestDate = rows[0].snapshot_date;
     const latest = rows.filter(r => r.snapshot_date === latestDate);
@@ -720,47 +750,95 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
       return best == null ? rk : Math.min(best, rk);
     }, null);
 
-    const revenuePerMonth = latest.reduce((s, r) => s + (Number(r.est_monthly_revenue) || 0), 0);
+    // Prior snapshot: most recent distinct date before latestDate
+    const priorSnapshotDate = rows.find(r => r.snapshot_date < latestDate)?.snapshot_date ?? null;
+    const prior = priorSnapshotDate ? rows.filter(r => r.snapshot_date === priorSnapshotDate) : [];
+    const priorRank = prior.reduce((best: number | null, r) => {
+      const rk = r.primary_subcategory_rank;
+      if (rk == null) return best;
+      return best == null ? rk : Math.min(best, rk);
+    }, null);
+    const rankChange = (rank != null && priorRank != null) ? priorRank - rank : null;
 
-    const topAsins = latest
-      .sort((a, b) => (Number(b.est_monthly_revenue) || 0) - (Number(a.est_monthly_revenue) || 0))
-      .slice(0, 3)
-      .map(r => shortName(r.asin));
+    // Best-ranked DL product: lowest primary_subcategory_rank wins; fall back to revenue sort
+    const sorted = [...latest].sort((a, b) => {
+      const ra = a.primary_subcategory_rank ?? Infinity
+      const rb = b.primary_subcategory_rank ?? Infinity
+      if (ra !== rb) return ra - rb
+      return (Number(b.est_monthly_revenue) || 0) - (Number(a.est_monthly_revenue) || 0)
+    })
+    // Short name takes priority; SmartScout title is the fallback for unmapped ASINs.
+    const top = sorted[0]
+    const topTitle = top ? (shortName(top.asin ?? '', top.title ?? undefined) || null) : null
 
-    return { key, label, rank, revenuePerMonth, topAsins, snapshotDate: latestDate };
+    return { key, label, rank, rankChange, priorSnapshotDate, topTitle, snapshotDate: latestDate };
   });
 
   // ── 5B: Market Share ────────────────────────────────────────────────────────
-  // Note: smartscout_subcategory_brands has no subcategory column — all ingested
-  // data is for Dishwasher Detergent. Laundry and Stain Remover views are empty
-  // until those subcategories are exported from SmartScout.
-  type ScBrandRow = {
-    brand_name: string;
-    market_share: number | null;
-    market_share_change: number | null;
-    snapshot_date: string;
-  };
-  const scBrands = (scBrandsRes.data ?? []) as unknown as ScBrandRow[];
+  // scBrands already typed as ScBrandRow[] from fetchAll above
 
-  const latestBrandSnap = scBrands[0]?.snapshot_date ?? endDate;
-  const latestBrandsAll = scBrands
-    .filter(r => r.snapshot_date === latestBrandSnap)
-    .sort((a, b) => (Number(b.market_share) || 0) - (Number(a.market_share) || 0));
-  const top5       = latestBrandsAll.slice(0, 5);
-  const dlRow      = latestBrandsAll.find(r => r.brand_name.toLowerCase().includes('dirty labs'));
-  const dlInTop5   = top5.some(r => r.brand_name.toLowerCase().includes('dirty labs'));
-  // Always show Dirty Labs — append as 6th row if not already in top 5
-  const dishwasherBrands = [...top5, ...(dlInTop5 || !dlRow ? [] : [dlRow])].map(r => ({
-    brand: r.brand_name,
-    share: Number(r.market_share) || 0,
-    mom: r.market_share_change !== null ? Number(r.market_share_change) : null,
-    isOurs: r.brand_name.toLowerCase().includes('dirty labs'),
-  }));
+  // Flexible subcategory match: handles normalizer variants (e.g. 'stain_remover' vs 'laundry_stain_remover')
+  function matchesSubcategory(sc: string | null, code: string): boolean {
+    if (!sc) return false;
+    if (sc === code) return true;
+    const lower = sc.toLowerCase();
+    switch (code) {
+      case 'dishwasher_detergent':  return lower.includes('dishwash');
+      case 'laundry_detergent':     return lower.includes('laundry') && !lower.includes('stain');
+      case 'laundry_stain_remover': return lower.includes('stain');
+      case 'toilet_bowl_cleaner':   return lower.includes('toilet') || lower.includes('disinfectant') || lower.includes('household');
+      default: return false;
+    }
+  }
+
+  function buildMarketShareRows(storageCode: string): {
+    rows: MarketShareRow[]; dlRow: MarketShareRow | null;
+    dlRank: number | null; totalBrands: number; snapshotDate: string;
+  } {
+    const forSub = scBrands.filter(r => matchesSubcategory(r.subcategory, storageCode));
+    if (forSub.length === 0) return { rows: [], dlRow: null, dlRank: null, totalBrands: 0, snapshotDate: endDate };
+
+    const latestSnap = forSub[0].snapshot_date;
+    const latest = forSub
+      .filter(r => r.snapshot_date === latestSnap)
+      .sort((a, b) => (Number(b.market_share) || 0) - (Number(a.market_share) || 0));
+
+    const totalBrands = latest.length;
+    const dlIdx = latest.findIndex(r => r.brand_name?.toLowerCase().includes('dirty labs'));
+    const dlRank = dlIdx >= 0 ? dlIdx + 1 : null;
+
+    const dlRaw = dlIdx >= 0 ? latest[dlIdx] : null;
+    const dlRow: MarketShareRow | null = dlRaw ? {
+      brand: dlRaw.brand_name,
+      share: Number(dlRaw.market_share) || 0,
+      mom:   dlRaw.market_share_change !== null ? Number(dlRaw.market_share_change) : null,
+      isOurs: true,
+    } : null;
+
+    // Top 10 competitors by share, Dirty Labs excluded
+    const rows: MarketShareRow[] = latest
+      .filter(r => !r.brand_name?.toLowerCase().includes('dirty labs'))
+      .slice(0, 10)
+      .map(r => ({
+        brand: r.brand_name,
+        share: Number(r.market_share) || 0,
+        mom:   r.market_share_change !== null ? Number(r.market_share_change) : null,
+        isOurs: false,
+      }));
+
+    return { rows, dlRow, dlRank, totalBrands, snapshotDate: latestSnap };
+  }
+
+  const dishData    = buildMarketShareRows('dishwasher_detergent');
+  const laundryData = buildMarketShareRows('laundry_detergent');
+  const stainData   = buildMarketShareRows('laundry_stain_remover');
+  const toiletData  = buildMarketShareRows('toilet_bowl_cleaner');
 
   const marketShare: MarketShareView[] = [
-    { subcategory: 'dishwasher',    label: 'Dishwasher',    rows: dishwasherBrands, snapshotDate: latestBrandSnap },
-    { subcategory: 'laundry',       label: 'Laundry',       rows: [],               snapshotDate: endDate },
-    { subcategory: 'stain_remover', label: 'Stain Remover', rows: [],               snapshotDate: endDate },
+    { subcategory: 'dishwasher',    label: 'Dishwasher',    ...dishData    },
+    { subcategory: 'laundry',       label: 'Laundry',       ...laundryData },
+    { subcategory: 'stain_remover', label: 'Stain Remover', ...stainData   },
+    { subcategory: 'toilet',        label: 'Toilet',        ...toiletData  },
   ];
 
   // ── 5C: CVR / Buy Box ───────────────────────────────────────────────────────
@@ -772,25 +850,26 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
     if ((r.asin in ASIN_NAMES) && r.cvr !== null) priorCvrMap.set(r.asin, r.cvr);
   }
 
-  // Brand avg CVR (fallback when no prior-period data for an ASIN)
-  const brandTotalSessions = knownPerf.reduce((s, r) => s + r.sessions, 0);
-  const brandTotalOrders   = knownPerf.reduce((s, r) => s + r.units_ordered, 0);
-  const brandAvgCvr        = brandTotalSessions > 0 ? brandTotalOrders / brandTotalSessions : null;
-
   const cvrBuyBox: CVRBuyBoxRow[] = knownPerf.map(r => {
     const cvr = r.cvr ?? 0;
-    let cvrTrend: CVRBuyBoxRow['cvrTrend'] = 'average';
-    const priorCvr = priorCvrMap.get(r.asin);
-    if (priorCvr != null && priorCvr > 0) {
-      // Period-over-period: ±5% threshold
-      const delta = (cvr - priorCvr) / priorCvr;
-      cvrTrend = delta > 0.05 ? 'above' : delta < -0.05 ? 'below' : 'average';
-    } else if (brandAvgCvr !== null && brandAvgCvr > 0) {
-      // Fallback: compare to brand average for the period
-      cvrTrend = cvr > brandAvgCvr * 1.2 ? 'above' : cvr < brandAvgCvr * 0.8 ? 'below' : 'average';
-    }
+    const priorCvr = priorCvrMap.get(r.asin) ?? null;
+    // Delta in percentage points (absolute, not relative); ±0.5pp threshold
+    const cvrDelta = priorCvr !== null ? cvr - priorCvr : null;
+    const cvrTrend: CVRBuyBoxRow['cvrTrend'] =
+      cvrDelta === null ? 'average'
+      : cvrDelta > 0.005 ? 'above'
+      : cvrDelta < -0.005 ? 'below'
+      : 'average';
     // buy_box_pct stored as percentage (99.18), component expects decimal (0..1)
-    return { asinShortName: shortName(r.asin), asin: r.asin, cvr, cvrTrend, buyBox: (r.buy_box_pct ?? 0) / 100 };
+    return {
+      asinShortName: shortName(r.asin),
+      asin: r.asin,
+      cvr,
+      cvrTrend,
+      cvrDelta,
+      priorPeriodLabel: cvrPriorPeriod.label,
+      buyBox: (r.buy_box_pct ?? 0) / 100,
+    };
   });
 
   // ── 5D: Subscribe & Save ────────────────────────────────────────────────────
@@ -927,8 +1006,11 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   const sumF = (arr: typeof allRows, f: 'spend' | 'sales') =>
     arr.reduce((a, r) => a + r[f], 0);
 
-  const totalSpend    = sumF(allRows, 'spend');
-  const totalSales    = sumF(allRows, 'sales');
+  // Use derived_metrics_daily for top-level totals (same source as Goal Rail) so
+  // both sections always agree. Per-type breakdowns stay on raw campaign rows since
+  // derived doesn't carry that granularity.
+  const totalSpend    = acct.total_ppc_spend;
+  const totalSales    = acct.total_ppc_sales;
   const spSpend       = sumF(spRows,  'spend');
   const spSales       = sumF(spRows,  'sales');
   const sbCombSpend   = sumF(sbRows,  'spend') + sumF(sbvRows, 'spend');
@@ -1079,12 +1161,22 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
     impressions_total: number | null;
   };
 
-  const toSQPRow = (r: SqpRaw): SQPRow => ({
-    query: r.search_query,
-    // purchases_brand_share stored as 0–100 percentage; fmtPct expects 0..1 decimal
-    purchaseShare: (Number(r.purchases_brand_share) || 0) / 100,
-    searchVolume: Number(r.search_query_volume ?? r.impressions_total) || 0,
-  });
+  type Agg = { shareSum: number; volumeSum: number; count: number };
+  function dedupSQP(rows: SqpRaw[]): SQPRow[] {
+    const seen = new Map<string, Agg>();
+    for (const r of rows) {
+      const share = Number(r.purchases_brand_share) || 0;
+      const vol   = Number(r.search_query_volume ?? r.impressions_total) || 0;
+      const agg   = seen.get(r.search_query);
+      if (agg) { agg.shareSum += share; agg.volumeSum += vol; agg.count++; }
+      else       seen.set(r.search_query, { shareSum: share, volumeSum: vol, count: 1 });
+    }
+    return Array.from(seen.entries()).map(([query, { shareSum, volumeSum, count }]) => ({
+      query,
+      purchaseShare: shareSum / count / 100,
+      searchVolume:  Math.round(volumeSum / count),
+    }));
+  }
 
   // 3A: top brand queries — each section isolated so one failure doesn't block others
   let brandQueries: SQPRow[] = [];
@@ -1097,9 +1189,9 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
       .lte('report_date', period.end)
       .or('search_query.ilike.%dirty labs%,search_query.ilike.%dirtylabs%')
       .order('purchases_brand', { ascending: false, nullsFirst: false })
-      .limit(5);
+      .limit(30);
     if (res.error) throw res.error;
-    brandQueries = ((res.data ?? []) as unknown as SqpRaw[]).map(toSQPRow);
+    brandQueries = dedupSQP((res.data ?? []) as unknown as SqpRaw[]).slice(0, 5);
   } catch (err) {
     console.error('loadSearchIntel: brand queries failed:', err);
   }
@@ -1118,9 +1210,9 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
       .lt('purchases_brand_share', 10)
       .not('search_query', 'ilike', '%dirty%')
       .order('purchases_total', { ascending: false, nullsFirst: false })
-      .limit(5);
+      .limit(30);
     if (res.error) throw res.error;
-    shareGaps = ((res.data ?? []) as unknown as SqpRaw[]).map(toSQPRow);
+    shareGaps = dedupSQP((res.data ?? []) as unknown as SqpRaw[]).slice(0, 5);
   } catch (err) {
     console.error('loadSearchIntel: share gaps failed:', err);
   }

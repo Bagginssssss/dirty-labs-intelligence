@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server'
 import { DIRTY_LABS_SYSTEM_PROMPT, DATA_COMPLETENESS_NOTE, VIRTUAL_BUNDLE_NOTE, type VBContextInput } from '@/lib/analysis-context'
+import { shortName } from '@/lib/dashboard/asin-names'
 import { buildMemoryContext, saveInsight, seedInitialKnowledge, seedDefaultWatches } from '@/lib/memory/index'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import {
   getAccountSummary,
+  getMonthlyAccountMetrics,
   getCampaignsByAdType,
   getWasteCampaigns,
   getTopPerformingCampaigns,
   getASINPerformance,
+  getASINPerformanceByMonth,
   getSSPerformance,
   getGoalProgress,
   getHarvestCandidates,
@@ -22,6 +25,18 @@ import {
 import type { AnomalyItem } from '@/lib/queries/types'
 
 type AnalysisType = 'weekly_briefing' | 'anomaly_detection' | 'opportunity_analysis' | 'campaign_audit' | 'chat'
+
+/** Adds a `name` field (short name) to any array of objects that have an `asin` string field. */
+function withShortNames(data: unknown): unknown {
+  if (!Array.isArray(data)) return data
+  return data.map((item: unknown) => {
+    if (typeof item === 'object' && item !== null && 'asin' in item) {
+      const row = item as { asin: string }
+      return { ...row, name: shortName(row.asin) }
+    }
+    return item
+  })
+}
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
@@ -79,7 +94,7 @@ WASTE CAMPAIGNS (ROAS < 2.0, Spend > $10):
 ${JSON.stringify(data.wasteCampaigns, null, 2)}
 
 ASIN PERFORMANCE:
-${JSON.stringify(data.asinPerformance, null, 2)}
+${JSON.stringify(withShortNames(data.asinPerformance), null, 2)}
 
 GOAL PROGRESS:
 ${JSON.stringify(data.goalProgress, null, 2)}
@@ -112,10 +127,10 @@ DETECTED ANOMALIES:
 ${JSON.stringify(data.anomalies, null, 2)}
 
 ASIN PERFORMANCE:
-${JSON.stringify(data.asinPerformance, null, 2)}
+${JSON.stringify(withShortNames(data.asinPerformance), null, 2)}
 
 SUBSCRIBE & SAVE PERFORMANCE:
-${JSON.stringify(data.ssPerformance, null, 2)}
+${JSON.stringify(withShortNames(data.ssPerformance), null, 2)}
 
 GOAL PROGRESS:
 ${JSON.stringify(data.goalProgress, null, 2)}
@@ -164,10 +179,12 @@ Identify and prioritise the top NTB acquisition opportunities. Focus on: 1) term
 
 function buildChatPrompt(data: {
   accountSummary: unknown
+  monthlyAccountMetrics: unknown
   campaignsByAdType: unknown
   topCampaigns: unknown
   wasteCampaigns: unknown
   asinPerformance: unknown
+  asinPerformanceByMonth: unknown
   ssPerformance: unknown
   goalProgress: unknown
   harvestCandidates: unknown
@@ -188,10 +205,17 @@ function buildChatPrompt(data: {
 
 ${DATA_COMPLETENESS_NOTE(1, 14, data.sbAvailableFrom)}
 
-PERIOD: ${data.startDate} to ${data.endDate}
+DATA WINDOW: ${data.startDate} to ${data.endDate} (12-month rolling)
+Note: Months absent from MONTHLY ACCOUNT METRICS below lack derived account-level data (calculate-metrics not yet run), but may still have ASIN-level data in ASIN PERFORMANCE BY MONTH.
 
-ACCOUNT SUMMARY:
+ACCOUNT SUMMARY (aggregate across full window):
 ${JSON.stringify(data.accountSummary, null, 2)}
+
+MONTHLY ACCOUNT METRICS (month-by-month from derived_metrics_daily — shows which months have account-level data):
+${JSON.stringify(data.monthlyAccountMetrics, null, 2)}
+
+ASIN PERFORMANCE BY MONTH (month-by-month from business_report — use this for month-specific ASIN questions):
+${JSON.stringify(withShortNames(data.asinPerformanceByMonth), null, 2)}
 
 CAMPAIGN PERFORMANCE BY AD TYPE:
 ${JSON.stringify(data.campaignsByAdType, null, 2)}
@@ -202,11 +226,11 @@ ${JSON.stringify(data.topCampaigns, null, 2)}
 WASTE CAMPAIGNS:
 ${JSON.stringify(data.wasteCampaigns, null, 2)}
 
-ASIN PERFORMANCE:
-${JSON.stringify(data.asinPerformance, null, 2)}
+ASIN PERFORMANCE (aggregated across full window):
+${JSON.stringify(withShortNames(data.asinPerformance), null, 2)}
 
 SUBSCRIBE & SAVE PERFORMANCE:
-${JSON.stringify(data.ssPerformance, null, 2)}
+${JSON.stringify(withShortNames(data.ssPerformance), null, 2)}
 
 GOAL PROGRESS:
 ${JSON.stringify(data.goalProgress, null, 2)}
@@ -239,7 +263,7 @@ ${data.memoryContext}
 
 USER QUESTION: ${data.query}
 
-Answer the user's question directly using the data above. Be specific with numbers. If the data doesn't contain enough information to fully answer the question, say so clearly.`
+Answer the user's question directly using the data above. For month-specific questions, use ASIN PERFORMANCE BY MONTH and MONTHLY ACCOUNT METRICS. Be specific with numbers. If the data doesn't contain enough information to fully answer the question, say so clearly.`
 }
 
 export async function POST(request: Request) {
@@ -248,7 +272,7 @@ export async function POST(request: Request) {
 
     const {
       brand_id,
-      analysis_type,
+      analysis_type: rawAnalysisType,
       query,
       start_date,
       end_date,
@@ -256,13 +280,21 @@ export async function POST(request: Request) {
       month,
     }: {
       brand_id: string
-      analysis_type: AnalysisType
+      analysis_type: string
       query?: string
       start_date?: string
       end_date?: string
       year?: number
       month?: number
     } = body
+
+    // ChatPanel sends short forms ('briefing', 'anomaly', 'opportunity'); normalize to canonical names.
+    const analysis_type = (
+      rawAnalysisType === 'briefing'    ? 'weekly_briefing' :
+      rawAnalysisType === 'anomaly'     ? 'anomaly_detection' :
+      rawAnalysisType === 'opportunity' ? 'opportunity_analysis' :
+      rawAnalysisType
+    ) as AnalysisType
 
     if (!brand_id) {
       return NextResponse.json({ error: 'brand_id is required' }, { status: 400 })
@@ -458,30 +490,36 @@ export async function POST(request: Request) {
       })
 
     } else {
-      // chat — full context
+      // chat — full context, always 12-month rolling window regardless of period selector
       if (!query) {
         return NextResponse.json({ error: 'query is required for chat analysis_type' }, { status: 400 })
       }
 
+      const chatEndDate   = todayISO()
+      const chatStartDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
       const [
-        accSum, byType, waste, top, asinPerf, ssPerf, goals,
+        accSum, monthlyMetrics, byType, waste, top,
+        asinPerf, asinPerfByMonth, ssPerf, goals,
         harvest, sqGaps, landscape, mShare, topTerms, wasteTerms, detected, movers, memory,
       ] = await Promise.all([
-        getAccountSummary(brand_id, startDate, endDate),
-        getCampaignsByAdType(brand_id, startDate, endDate),
-        getWasteCampaigns(brand_id, startDate, endDate, 2.0, 10),
-        getTopPerformingCampaigns(brand_id, startDate, endDate, 5.0, 15),
-        getASINPerformance(brand_id, startDate, endDate),
-        getSSPerformance(brand_id, startDate, endDate),
+        getAccountSummary(brand_id, chatStartDate, chatEndDate),
+        getMonthlyAccountMetrics(brand_id, chatStartDate, chatEndDate),
+        getCampaignsByAdType(brand_id, chatStartDate, chatEndDate),
+        getWasteCampaigns(brand_id, chatStartDate, chatEndDate, 2.0, 10),
+        getTopPerformingCampaigns(brand_id, chatStartDate, chatEndDate, 5.0, 15),
+        getASINPerformance(brand_id, chatStartDate, chatEndDate),
+        getASINPerformanceByMonth(brand_id, chatStartDate, chatEndDate),
+        getSSPerformance(brand_id, chatStartDate, chatEndDate),
         getGoalProgress(brand_id, goalPeriod),
-        getHarvestCandidates(brand_id, startDate, endDate),
-        getSearchQueryGaps(brand_id, startDate, endDate),
+        getHarvestCandidates(brand_id, chatStartDate, chatEndDate),
+        getSearchQueryGaps(brand_id, chatStartDate, chatEndDate),
         getCompetitiveLandscape(brand_id),
         getMarketShareByBrand(brand_id),
-        getTopSearchTerms(brand_id, startDate, endDate, 20),
-        getWasteSearchTerms(brand_id, startDate, endDate, 2.0, 10),
-        getAnomalies(brand_id, endDate),
-        getRankMovers(brand_id, startDate, endDate, 5),
+        getTopSearchTerms(brand_id, chatStartDate, chatEndDate, 20),
+        getWasteSearchTerms(brand_id, chatStartDate, chatEndDate, 10, 0.5),
+        getAnomalies(brand_id, chatEndDate),
+        getRankMovers(brand_id, chatStartDate, chatEndDate, 5),
         buildMemoryContext(brand_id),
       ])
 
@@ -492,10 +530,12 @@ export async function POST(request: Request) {
 
       userPrompt = buildChatPrompt({
         accountSummary: accSum,
+        monthlyAccountMetrics: monthlyMetrics,
         campaignsByAdType: byType,
         topCampaigns: top,
         wasteCampaigns: waste,
         asinPerformance: asinPerf,
+        asinPerformanceByMonth: asinPerfByMonth,
         ssPerformance: ssPerf,
         goalProgress: goals,
         harvestCandidates: harvest,
@@ -507,8 +547,8 @@ export async function POST(request: Request) {
         anomalies: detected,
         rankMovers: movers,
         memoryContext: memory.promptContext,
-        startDate,
-        endDate,
+        startDate: chatStartDate,
+        endDate: chatEndDate,
         query,
         sbAvailableFrom,
       })
@@ -533,6 +573,17 @@ export async function POST(request: Request) {
       }),
     })
 
+    if (anthropicRes.status === 429) {
+      const retryAfter = anthropicRes.headers.get('retry-after')
+      const resetAt = retryAfter
+        ? new Date(Date.now() + parseInt(retryAfter, 10) * 1000).toISOString()
+        : null
+      return NextResponse.json(
+        { error: 'rate_limited', reset_at: resetAt },
+        { status: 429 }
+      )
+    }
+
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text()
       return NextResponse.json(
@@ -540,6 +591,10 @@ export async function POST(request: Request) {
         { status: 502 }
       )
     }
+
+    const rlLimit     = anthropicRes.headers.get('anthropic-ratelimit-input-tokens-limit')
+    const rlRemaining = anthropicRes.headers.get('anthropic-ratelimit-input-tokens-remaining')
+    const rlReset     = anthropicRes.headers.get('anthropic-ratelimit-input-tokens-reset')
 
     const anthropicData = await anthropicRes.json() as {
       content: Array<{ type: string; text: string }>
@@ -550,33 +605,37 @@ export async function POST(request: Request) {
     const usage        = anthropicData.usage
 
     // ── Step 5: Save to episodic memory ───────────────────────────────────
-    const dateLabel = endDate
-    const insightTitleMap: Record<AnalysisType, string> = {
-      weekly_briefing:     `Weekly Briefing ${dateLabel}`,
-      campaign_audit:      `Campaign Audit ${dateLabel}`,
-      anomaly_detection:   `Anomaly Scan ${dateLabel}`,
-      opportunity_analysis: `Opportunity Analysis ${dateLabel}`,
-      chat:                `Chat Query ${dateLabel}`,
-    }
-
-    const insightSeverity = (() => {
-      if (analysis_type === 'anomaly_detection') {
-        if (anomalies.some(a => a.severity === 'critical')) return 'critical' as const
-        if (anomalies.some(a => a.severity === 'warning'))  return 'warning'  as const
+    // Chat responses are intentionally excluded: auto-persisting them creates
+    // a feedback loop where any inaccuracy in one response gets reinforced into
+    // all subsequent responses via buildMemoryContext. Only operator-intentional
+    // analysis runs (briefings, anomaly scans, opportunity analyses) are saved.
+    if (analysis_type !== 'chat') {
+      const dateLabel = endDate
+      const insightTitleMap: Record<Exclude<AnalysisType, 'chat'>, string> = {
+        weekly_briefing:     `Weekly Briefing ${dateLabel}`,
+        campaign_audit:      `Campaign Audit ${dateLabel}`,
+        anomaly_detection:   `Anomaly Scan ${dateLabel}`,
+        opportunity_analysis: `Opportunity Analysis ${dateLabel}`,
       }
-      return 'info' as const
-    })()
 
-    await saveInsight(
-      brand_id,
-      analysis_type === 'weekly_briefing' || analysis_type === 'campaign_audit' ? 'weekly_briefing' :
-      analysis_type === 'anomaly_detection' ? 'anomaly' :
-      analysis_type === 'opportunity_analysis' ? 'opportunity' : 'recommendation',
-      insightTitleMap[analysis_type],
-      analysisText.slice(0, 2000),
-      insightSeverity,
-      { analysis_type, period: { start: startDate, end: endDate }, token_usage: usage }
-    )
+      const insightSeverity = (() => {
+        if (analysis_type === 'anomaly_detection') {
+          if (anomalies.some(a => a.severity === 'critical')) return 'critical' as const
+          if (anomalies.some(a => a.severity === 'warning'))  return 'warning'  as const
+        }
+        return 'info' as const
+      })()
+
+      await saveInsight(
+        brand_id,
+        analysis_type === 'weekly_briefing' || analysis_type === 'campaign_audit' ? 'weekly_briefing' :
+        analysis_type === 'anomaly_detection' ? 'anomaly' : 'opportunity',
+        insightTitleMap[analysis_type],
+        analysisText.slice(0, 2000),
+        insightSeverity,
+        { analysis_type, period: { start: startDate, end: endDate }, token_usage: usage }
+      )
+    }
 
     // ── Step 6: Return response ────────────────────────────────────────────
     return NextResponse.json({
@@ -588,6 +647,11 @@ export async function POST(request: Request) {
       content:        analysisText,
       token_usage:    { input: usage.input_tokens, output: usage.output_tokens },
       memory_context_used: memoryContextUsed,
+      rate_limit: rlLimit && rlRemaining && rlReset ? {
+        limit:     parseInt(rlLimit, 10),
+        remaining: parseInt(rlRemaining, 10),
+        reset_at:  rlReset,
+      } : null,
       raw_data: {
         account_summary: accountSummary,
         anomalies,

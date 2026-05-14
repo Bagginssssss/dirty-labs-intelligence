@@ -12,6 +12,8 @@ export interface MapperContext {
   date_range_start?: string
   date_range_end?: string
   hint?: string            // detection hint, e.g. 'SB' for Sponsored Brands rows
+  subcategory?: string     // required for smartscout_subcategory_brands (no per-row column)
+  filename?: string        // original upload filename; used for granularity detection
 }
 
 // Normalises a header string to lowercase_underscores for flexible matching.
@@ -41,3 +43,21 @@ export function makeGetter(row: RawRow) {
 }
 
 export { parseDate, parseInteger, parseNumeric }
+
+// Maps SmartScout "Primary Subcategory" display strings to storage codes.
+// Simple snake_case doesn't produce correct codes for all values
+// (e.g. "Laundry Stain Removers" → laundry_stain_removers ≠ laundry_stain_remover).
+const SUBCATEGORY_MAP: Record<string, string> = {
+  'dishwasher detergent':              'dishwasher_detergent',
+  'laundry detergent pacs & tablets':  'laundry_detergent',
+  'liquid laundry detergent':          'laundry_detergent',
+  'laundry stain removers':            'laundry_stain_remover',
+  'household toilet cleaners':         'toilet_bowl_cleaner',
+  'household disinfectant wipes':      'toilet_bowl_cleaner',
+}
+
+export function normalizeSmartscoutSubcategory(raw: string | undefined | null): string | null {
+  if (!raw) return null
+  const key = raw.trim().toLowerCase()
+  return SUBCATEGORY_MAP[key] ?? key.replace(/\s+/g, '_')
+}

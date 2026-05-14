@@ -16,6 +16,7 @@ import { mapSmartscoutSubcategoryBrands } from './smartscout-subcategory-brands'
 import { mapVirtualBundleSales } from './virtual-bundle-sales'
 import { mapVirtualBundleDaily } from './virtual-bundle-daily'
 import { mapVirtualBundleSnapshots } from './virtual-bundle-snapshots'
+import { mapBrandAnalyticsCustomerLoyalty } from './brand-analytics-customer-loyalty'
 
 // MapperFn may return a single row or an array of rows (for unpivoting mappers).
 export type MapperFn = (row: RawRow, brandId: string, context?: MapperContext) => MappedRow | MappedRow[]
@@ -43,8 +44,9 @@ const MAPPERS: Record<string, MapperFn> = {
 }
 
 const BATCH_MAPPERS: Record<string, BatchMapperFn> = {
-  smartscout_subcategory_products:  mapSmartscoutSubcategoryProducts,
-  virtual_bundle_sales_snapshots:   mapVirtualBundleSnapshots,
+  smartscout_subcategory_products:       mapSmartscoutSubcategoryProducts,
+  virtual_bundle_sales_snapshots:        mapVirtualBundleSnapshots,
+  brand_analytics_customer_loyalty:      mapBrandAnalyticsCustomerLoyalty,
 }
 
 export function getMapper(reportType: string): MapperFn | null {
@@ -70,3 +72,4 @@ export * from './smartscout-brand-revenue'
 export * from './search-query-performance'
 export * from './smartscout-subcategory-products'
 export * from './smartscout-subcategory-brands'
+export * from './brand-analytics-customer-loyalty'

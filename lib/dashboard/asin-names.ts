@@ -28,7 +28,11 @@ export const ASIN_NAMES: Record<string, string> = {
   B0FQPMNJ6Z: 'Toilet',
 };
 
-/** Lookup helper that falls back to the ASIN itself when not found. */
-export function shortName(asin: string): string {
-  return ASIN_NAMES[asin] ?? asin;
+/**
+ * Lookup helper: short name → fallback → raw ASIN.
+ * Pass a SmartScout/Amazon title as fallback so unmapped ASINs still display
+ * a human-readable string rather than a raw ASIN.
+ */
+export function shortName(asin: string, fallback?: string): string {
+  return ASIN_NAMES[asin] ?? fallback ?? asin;
 }

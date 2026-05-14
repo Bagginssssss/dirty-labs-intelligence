@@ -198,10 +198,14 @@ const SIGNATURES: Array<{
     // co-occur in the Subcategory Brands report.
     reportType: 'smartscout_subcategory_brands',
     tableName: 'smartscout_subcategory_brands',
+    // Subcategory Brands report — filtered at export time, no per-row subcategory column.
+    // Unique combination: market_share + market_share_change + ad_spend_share only
+    // co-occur in this report (not in smartscout_brand_revenue or share_of_voice).
+    // This signature MUST precede smartscout_brand_revenue (which also has market_share).
     match: h =>
+      has(h, 'market_share') &&
       has(h, 'market_share_change') &&
-      has(h, 'ad_spend_share') &&
-      has(h, 'dominant_seller_country'),
+      has(h, 'ad_spend_share'),
   },
   {
     // SmartScout product-level subcategory export.
@@ -238,6 +242,18 @@ const SIGNATURES: Array<{
       has(h, 'sessions') &&
       (has(h, 'buy_box') || has(h, 'page_views')) &&
       (has(h, 'child_asin') || has(h, 'parent_asin') || has(h, 'asin')),
+  },
+  {
+    // Amazon Brand Analytics Customer Loyalty report (weekly and monthly share identical headers).
+    // Unique combination: total_customers + new_to_brand_customers + repeat_purchase_rate
+    // + potential_new_customers — none appear together in any other known report.
+    reportType: 'brand_analytics_customer_loyalty',
+    tableName:  'brand_analytics_customer_loyalty',
+    match: h =>
+      has(h, 'total_customers') &&
+      has(h, 'new_to_brand_customers') &&
+      has(h, 'repeat_purchase_rate') &&
+      has(h, 'potential_new_customers'),
   },
   {
     // Guard: lacks 'targeting' and 'match_type' so a targeting report file that

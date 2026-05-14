@@ -49,8 +49,9 @@ export type SubcategoryRankRow = {
   key: 'dishwasher' | 'laundry' | 'stain_remover' | 'toilet';
   label: string;
   rank: number | null;
-  revenuePerMonth: number | null;
-  topAsins: string[];
+  rankChange: number | null;        // prior_rank - current_rank; positive = improved
+  priorSnapshotDate: string | null; // ISO date of the snapshot used for rankChange
+  topTitle: string | null;          // title of the best-ranked DL product in this subcategory
   snapshotDate: string;
 };
 
@@ -62,9 +63,12 @@ export type MarketShareRow = {
 };
 
 export type MarketShareView = {
-  subcategory: 'dishwasher' | 'laundry' | 'stain_remover';
+  subcategory: 'dishwasher' | 'laundry' | 'stain_remover' | 'toilet';
   label: string;
-  rows: MarketShareRow[];
+  dlRow: MarketShareRow | null;  // Dirty Labs' own row; null when not ranked in this subcategory
+  dlRank: number | null;         // 1-indexed rank by market_share; null when absent
+  totalBrands: number;           // total brands with data in this subcategory
+  rows: MarketShareRow[];        // top competitors by market_share (DL excluded)
   snapshotDate: string;
 };
 
@@ -73,6 +77,8 @@ export type CVRBuyBoxRow = {
   asin: string;
   cvr: number;
   cvrTrend: 'above' | 'average' | 'below';
+  cvrDelta: number | null;     // pp delta vs prior period; null when no prior data
+  priorPeriodLabel: string;    // e.g. "Prior March 2026"
   buyBox: number;
 };
 

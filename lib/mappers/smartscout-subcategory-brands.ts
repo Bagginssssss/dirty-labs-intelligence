@@ -1,8 +1,9 @@
-import { MappedRow, RawRow, MapperContext, makeGetter, parseNumeric } from './types'
+import { MappedRow, RawRow, MapperContext, makeGetter, parseNumeric, normalizeSmartscoutSubcategory } from './types'
 
 export interface SmartscoutSubcategoryBrandsRow extends MappedRow {
   snapshot_date: string | null
   brand_name: string | null
+  subcategory: string | null
   est_monthly_revenue: number | null
   market_share: number | null
   market_share_change: number | null
@@ -25,15 +26,24 @@ export function mapSmartscoutSubcategoryBrands(
   context?: MapperContext
 ): SmartscoutSubcategoryBrandsRow[] {
   const get = makeGetter(row)
-  const snapshotDate = context?.date_range_start ?? null
+  const snapshotDate =
+    context?.date_range_start ||
+    new Date().toISOString().split('T')[0]
 
   const brandName = get('', 'Brand', 'brand_name', 'brand') || null
   if (!brandName) return []
+
+  // The Subcategory Brands report has no per-row subcategory column.
+  // Subcategory is provided by the operator via the upload form and passed through context.
+  const subcategory = context?.subcategory
+    ? normalizeSmartscoutSubcategory(context.subcategory)
+    : null
 
   return [{
     brand_id:                brandId,
     snapshot_date:           snapshotDate,
     brand_name:              brandName,
+    subcategory,
     est_monthly_revenue:     parseNumeric(get('', 'Estimated Monthly Revenue', 'est_monthly_revenue')),
     market_share:            parseNumeric(get('', 'Market Share', 'market_share')),
     market_share_change:     parseNumeric(get('', 'Market Share Change', 'market_share_change')),
