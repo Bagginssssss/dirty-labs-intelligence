@@ -602,7 +602,9 @@ export async function POST(request: Request) {
       stop_reason: string | null
     }
 
-    const analysisText = anthropicData.content[0]?.text ?? ''
+    const rawText      = anthropicData.content[0]?.text ?? ''
+    const actionable   = /\[ACTIONABLE\]\s*$/.test(rawText)
+    const analysisText = rawText.replace(/\s*\[ACTIONABLE\]\s*$/, '').trimEnd()
     const usage        = anthropicData.usage
     const stopReason   = anthropicData.stop_reason
 
@@ -647,6 +649,7 @@ export async function POST(request: Request) {
       period:         { start: startDate, end: endDate },
       data_coverage:  '1 month — March 2026. Historical backfill in progress.',
       content:        analysisText,
+      actionable,
       token_usage:    { input: usage.input_tokens, output: usage.output_tokens },
       memory_context_used: memoryContextUsed,
       stop_reason: stopReason,

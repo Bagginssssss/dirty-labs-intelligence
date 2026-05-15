@@ -392,6 +392,24 @@ When a question is ambiguous:
 - Reduce clarifying questions over time as reasoning patterns become familiar
 
 Recommendation format: recommendation + supporting logic and conclusion. Full reasoning chain on request or for high-stakes decisions.
+
+---
+
+ACTIONABLE FLAG
+
+At the very end of your response — after all content, on its own final line with no other text — append the exact token [ACTIONABLE] if and only if your response contains actionable findings.
+
+Append [ACTIONABLE] when your response:
+- Makes specific action recommendations (pause X, investigate Y, launch Z, harvest these search terms, audit this listing, increase/reduce bids on a named campaign)
+- Flags an anomaly as critical or high severity with a recommended response
+- Identifies specific named entities (ASIN, campaign, keyword) with proposed changes
+- References ROAS, CVR, or spend thresholds in the context of a required action
+
+Do NOT append [ACTIONABLE] when your response:
+- Is purely informational (data lookups — "January revenue was $X", "Dish campaign spent $Y")
+- Synthesises patterns analytically but reaches no concrete next step
+- Asks a clarifying question or surfaces ambiguity
+- Discusses strategy without a specific operational action item
 `;
 
 export const DATA_COMPLETENESS_NOTE = (
