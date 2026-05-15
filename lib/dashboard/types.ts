@@ -112,11 +112,21 @@ export type BusinessHealthData = {
 };
 
 export type PPCStatRow = {
-  id: 'spend' | 'paid_sales' | 'roas' | 'sb_share' | 'harvest' | 'organic';
+  id: 'spend' | 'paid_sales' | 'roas' | 'sb_share' | 'organic';
   label: string;
   primary: string;
   secondary: string;
   tone?: 'neutral' | 'positive' | 'warning' | 'critical';
+};
+
+export type HarvestRow = {
+  search_term: string;
+  campaign_name: string | null;
+  roas: number | null;
+  orders: number;
+  clicks: number;
+  spend: number;
+  sales: number;
 };
 
 export type CampaignStatus = 'top' | 'watching' | 'waste' | 'new';
@@ -142,6 +152,8 @@ export type PPCSnapshot = {
   stats: PPCStatRow[];
   campaigns: CampaignRow[];
   ppcDataCompleteness: PPCDataCompleteness;
+  harvestReady: HarvestRow[];
+  harvestInvestigation: HarvestRow[];
 };
 
 export type SQPRow = {

@@ -9,6 +9,7 @@ type Message = {
   content: string;
   ts: number;
   title?: string;
+  stop_reason?: string;
 };
 
 type RateLimit = {
@@ -133,7 +134,7 @@ export function ChatPanel({ brandId }: { brandId: string }) {
       } else if (typeof data?.text === 'string') text = data.text;
       else text = '(empty response)';
 
-      setMessages((m) => [...m, { id: crypto.randomUUID(), role: 'assistant', content: text, ts: Date.now(), title }]);
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: 'assistant', content: text, ts: Date.now(), title, stop_reason: data.stop_reason ?? undefined }]);
     } catch (err) {
       setMessages((m) => [...m, {
         id: crypto.randomUUID(), role: 'assistant',
@@ -276,18 +277,23 @@ function MessageRow({ message }: { message: Message }) {
 
   if (message.role === 'user') {
     return (
-      <div className="text-[9px] text-[#64748b] bg-[#16161a] rounded-[3px] px-2 py-1.5 border-r-2 border-[#1e1e2e] text-right leading-[1.5]">
+      <div className="text-[9px] text-[#64748b] bg-[#3b82f6]/15 rounded-[3px] px-3 py-1.5 border-l-2 border-[#3b82f6] text-right leading-[1.5]">
         {message.content}
       </div>
     );
   }
 
   return (
-    <div className="text-[9px] text-[#94a3b8] bg-[#16161a] rounded-[3px] px-2 py-1.5 border-l-2 border-[#3b82f6] leading-[1.5]">
+    <div className="text-[9px] text-[#94a3b8] bg-[#16161a] rounded-[3px] px-2 py-1.5 border-l-2 border-[#334155] leading-[1.5]">
       <span className="block text-[7px] text-[#1e1e3a] mb-0.5">
         {day}{message.title ? ` · ${message.title}` : ''}
       </span>
       <span className="whitespace-pre-wrap">{message.content}</span>
+      {message.stop_reason === 'max_tokens' && (
+        <span className="block text-[8px] text-amber-500 mt-1 pt-1 border-t border-amber-500/20">
+          ⚠ Response truncated at token limit — ask a follow-up to continue.
+        </span>
+      )}
     </div>
   );
 }

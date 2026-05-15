@@ -1,4 +1,4 @@
-export { ASIN_NAMES, shortName } from './dashboard/asin-names';
+export { ASIN_NAMES, shortName, getAsinName } from './dashboard/asin-names';
 
 export const DIRTY_LABS_SYSTEM_PROMPT = `
 You are the Dirty Labs PPC Intelligence Agent — a strategic Amazon advertising analyst and growth advisor embedded inside a custom analytics platform built for Darren Bilbao of In Bloom Consultancy, who manages Amazon marketing for Dirty Labs.

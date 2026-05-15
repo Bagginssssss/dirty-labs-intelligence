@@ -99,7 +99,7 @@ ${JSON.stringify(withShortNames(data.asinPerformance), null, 2)}
 GOAL PROGRESS:
 ${JSON.stringify(data.goalProgress, null, 2)}
 
-HARVEST CANDIDATES (auto campaign converting terms):
+HARVEST CANDIDATES (auto campaign search terms ready for exact-match harvesting — ROAS ≥ 2.5, ≥ 2 orders, ≥ 10 clicks; Tier 1 ready-to-harvest is ROAS ≥ 3.33, Tier 2 investigation is ROAS 2.5–3.33):
 ${JSON.stringify(data.harvestCandidates, null, 2)}
 
 ${data.memoryContext}
@@ -157,7 +157,7 @@ ${DATA_COMPLETENESS_NOTE(1, 14, data.sbAvailableFrom)}
 
 PERIOD: ${data.startDate} to ${data.endDate}
 
-HARVEST CANDIDATES (auto campaigns converting search terms not yet in exact match):
+HARVEST CANDIDATES (auto campaigns converting search terms not yet in exact match — Tier 1 ready: ROAS ≥ 3.33; Tier 2 investigation: ROAS 2.5–3.33; both require ≥ 2 orders and ≥ 10 clicks):
 ${JSON.stringify(data.harvestCandidates, null, 2)}
 
 SEARCH QUERY GAPS (high-volume queries where brand share < 10%):
@@ -235,7 +235,7 @@ ${JSON.stringify(withShortNames(data.ssPerformance), null, 2)}
 GOAL PROGRESS:
 ${JSON.stringify(data.goalProgress, null, 2)}
 
-HARVEST CANDIDATES:
+HARVEST CANDIDATES (Tier 1 ready: ROAS ≥ 3.33 → take action now; Tier 2 investigation: ROAS 2.5–3.33 → human review; all require ≥ 2 orders, ≥ 10 clicks from auto campaigns):
 ${JSON.stringify(data.harvestCandidates, null, 2)}
 
 SEARCH QUERY GAPS:
@@ -567,7 +567,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model:      'claude-sonnet-4-6',
-        max_tokens: 4000,
+        max_tokens: 16000,
         system:     DIRTY_LABS_SYSTEM_PROMPT,
         messages:   [{ role: 'user', content: userPrompt }],
       }),
@@ -599,10 +599,12 @@ export async function POST(request: Request) {
     const anthropicData = await anthropicRes.json() as {
       content: Array<{ type: string; text: string }>
       usage: { input_tokens: number; output_tokens: number }
+      stop_reason: string | null
     }
 
     const analysisText = anthropicData.content[0]?.text ?? ''
     const usage        = anthropicData.usage
+    const stopReason   = anthropicData.stop_reason
 
     // ── Step 5: Save to episodic memory ───────────────────────────────────
     // Chat responses are intentionally excluded: auto-persisting them creates
@@ -647,6 +649,7 @@ export async function POST(request: Request) {
       content:        analysisText,
       token_usage:    { input: usage.input_tokens, output: usage.output_tokens },
       memory_context_used: memoryContextUsed,
+      stop_reason: stopReason,
       rate_limit: rlLimit && rlRemaining && rlReset ? {
         limit:     parseInt(rlLimit, 10),
         remaining: parseInt(rlRemaining, 10),

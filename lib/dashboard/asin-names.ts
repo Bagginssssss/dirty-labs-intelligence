@@ -36,3 +36,11 @@ export const ASIN_NAMES: Record<string, string> = {
 export function shortName(asin: string, fallback?: string): string {
   return ASIN_NAMES[asin] ?? fallback ?? asin;
 }
+
+/**
+ * Simple single-argument lookup: short name or raw ASIN if unmapped.
+ * Use when no Amazon title fallback is available.
+ */
+export function getAsinName(asin: string): string {
+  return ASIN_NAMES[asin] ?? asin;
+}

@@ -63,6 +63,13 @@ export function resolvePeriod(raw: string | undefined, today = new Date()): Reso
     return { key, start: iso(start), end: iso(end), label: 'Last 30 days' };
   }
 
+  if (key === 'last_90d') {
+    const end = new Date(today);
+    const start = new Date(today);
+    start.setUTCDate(start.getUTCDate() - 89);
+    return { key, start: iso(start), end: iso(end), label: 'Last 90 days' };
+  }
+
   if (key === 'mtd') {
     return {
       key,
@@ -131,8 +138,7 @@ export function resolvePeriod(raw: string | undefined, today = new Date()): Reso
 export type PeriodPreset = {
   key: PeriodKey;
   label: string;
-  /** 'quarter' presets are rendered in a separate section of the picker */
-  group?: 'quarter';
+  group?: 'rolling' | 'to-date' | 'quarter';
   /** True when the period is in-progress and data is incomplete */
   partial?: boolean;
   /** Short warning shown next to the preset label in the picker */
@@ -209,15 +215,16 @@ export function priorPeriod(period: ResolvedPeriod): ResolvedPeriod {
 }
 
 export const PERIOD_PRESETS: PeriodPreset[] = [
-  { key: 'last_7d',  label: 'Last 7d' },
-  { key: 'last_30d', label: 'Last 30d' },
-  { key: 'mtd',      label: 'MTD' },
-  { key: '2026-01',  label: 'Jan 2026' },
-  { key: '2026-02',  label: 'Feb 2026' },
-  { key: '2026-03',  label: 'Mar 2026' },
-  { key: '2026-04',  label: 'Apr 2026' },
-  // Quarters
-  { key: '2025Q4',  label: 'Q4 2025',         group: 'quarter', coverageWarning: 'SB/SBV limited; SQP partial' },
-  { key: '2026Q1',  label: 'Q1 2026',         group: 'quarter' },
-  { key: '2026Q2',  label: 'Q2 2026 (so far)', group: 'quarter', partial: true },
+  // Rolling windows (relative to today)
+  { key: 'last_7d',  label: 'Last 7 days',  group: 'rolling' },
+  { key: 'last_30d', label: 'Last 30 days', group: 'rolling' },
+  { key: 'last_90d', label: 'Last 90 days', group: 'rolling' },
+  // To-date anchors (current period start → today)
+  { key: 'mtd', label: 'MTD', group: 'to-date' },
+  { key: 'qtd', label: 'QTD', group: 'to-date' },
+  { key: 'ytd', label: 'YTD', group: 'to-date' },
+  // Specific historical quarters
+  { key: '2025Q4', label: 'Q4 2025',          group: 'quarter', coverageWarning: 'SB/SBV limited; SQP partial' },
+  { key: '2026Q1', label: 'Q1 2026',          group: 'quarter' },
+  { key: '2026Q2', label: 'Q2 2026 (so far)', group: 'quarter', partial: true },
 ];

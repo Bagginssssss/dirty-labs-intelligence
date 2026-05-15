@@ -42,7 +42,7 @@ import type { MonthIndex } from './targets';
 import { fmtUSDCompact, fmtUSD, fmtRoas, fmtIntCompact, fmtPct, fmtPctSigned } from './format';
 import { getAccountSummary } from '@/lib/queries/account';
 import { getCampaignsByAdType } from '@/lib/queries/campaigns';
-import { getHarvestCandidates } from '@/lib/queries/keywords';
+import { getHarvestCandidatesTiered } from '@/lib/queries/keywords';
 import { getAnomalies } from '@/lib/queries/anomalies';
 import { getASINPerformance } from '@/lib/queries/products';
 import { getRankMovers } from '@/lib/queries/rank';
@@ -980,9 +980,9 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
   // 14-day cutoff for 'new' campaign tag: campaigns.launch_date >= this date.
   const cutoff14dDate = new Date(endDate.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
 
-  const [byType, harvest, acct, sbFromRes] = await Promise.all([
+  const [byType, harvestTiered, acct, sbFromRes] = await Promise.all([
     getCampaignsByAdType(BRAND_ID, period.start, period.end),
-    getHarvestCandidates(BRAND_ID, period.start, period.end),
+    getHarvestCandidatesTiered(BRAND_ID, period.start, period.end),
     getAccountSummary(BRAND_ID, period.start, period.end),
     // Earliest SB/SBV row — determines whether this period has full PPC coverage.
     supabaseAdmin
@@ -1054,7 +1054,6 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
     sbShare >= 0.20    ? 'target 25%+'                  :
     'underinvested · target 25%+';
 
-  const harvestCount   = harvest.length;
   const organicRevenue = acct.organic_revenue;
   const organicShare   = acct.total_revenue > 0 ? organicRevenue / acct.total_revenue : null;
 
@@ -1088,13 +1087,6 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
       primary: sbShare !== null ? fmtPct(sbShare) : '—',
       secondary: sbShareSecondary,
       tone: sbShareTone,
-    },
-    {
-      id: 'harvest',
-      label: 'Harvest candidates',
-      primary: `${harvestCount} terms`,
-      secondary: 'ready for manual exact match',
-      tone: harvestCount > 0 ? 'positive' : 'neutral',
     },
     {
       id: 'organic',
@@ -1142,10 +1134,16 @@ async function loadPPC(period: ResolvedPeriod): Promise<PPCSnapshot> {
     .sort((a, b) => b.spend - a.spend)
     .slice(0, 200);
 
+  function toHarvestRow(t: { search_term: string; campaign_name: string | null; roas: number | null; orders: number; clicks: number; spend: number; sales: number }) {
+    return { search_term: t.search_term, campaign_name: t.campaign_name, roas: t.roas, orders: t.orders, clicks: t.clicks, spend: t.spend, sales: t.sales };
+  }
+
   return {
     stats,
     campaigns: watchlist,
     ppcDataCompleteness: { sbAvailableFrom, isComplete: sbIsComplete },
+    harvestReady: harvestTiered.ready.map(toHarvestRow),
+    harvestInvestigation: harvestTiered.investigation.map(toHarvestRow),
   };
 }
 

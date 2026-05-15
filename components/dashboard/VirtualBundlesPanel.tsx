@@ -17,6 +17,7 @@
 import { useState } from 'react';
 import type { VirtualBundleData, VirtualBundleSnapshot } from '@/lib/dashboard/types';
 import { fmtUSD, fmtUSDCompact, fmtPctSigned, fmtPct } from '@/lib/dashboard/format';
+import { getAsinName } from '@/lib/dashboard/asin-names';
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
 
@@ -276,14 +277,14 @@ function BundleCell({
   latestSales: number;
   onClick: () => void;
 }) {
-  const shortName = bundle_name ?? bundle_asin.slice(-6);
+  const displayName = bundle_name ?? getAsinName(bundle_asin);
   return (
     <button
       onClick={onClick}
       className="bg-[#111113] border border-[#1e1e2e] rounded-[3px] px-[6px] py-[5px] text-left hover:border-[#3b82f6]/40 transition-colors w-full"
     >
       <div className="text-[7.5px] text-[#94a3b8] truncate mb-[2px]" title={bundle_name ?? bundle_asin}>
-        {shortName}
+        {displayName}
       </div>
       <Sparkline points={points} />
       <div className="text-[8px] font-medium text-[#e2e8f0] mt-[2px]">

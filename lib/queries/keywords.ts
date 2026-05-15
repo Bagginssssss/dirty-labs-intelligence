@@ -1,18 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { fetchAll } from './fetch-all'
 import { SearchTermRow } from './types'
-
-// Harvest threshold constants — tuned from defaults (orders≥1, roas≥3) which
-// produced 0 March 2026 candidates due to INB-36 (targeting_type never
-// populated by CSV ingestion). orders≥2 filters one-off conversions;
-// clicks≥10 is the data-quality gate; ROAS≥2.5 is looser than tooling
-// default 3.33 to surface optimization candidates that bid control + ASIN
-// targeting can promote post-harvest. Values may be tuned further as
-// operational insight builds. Tiered surface (ready vs investigation) is
-// planned as INB-37.
-const HARVEST_MIN_ORDERS = 2
-const HARVEST_MIN_ROAS   = 2.5
-const HARVEST_MIN_CLICKS = 10
+import { HARVEST_READY_THRESHOLDS, HARVEST_INVESTIGATION_THRESHOLDS } from '@/lib/dashboard/thresholds'
 
 type RawSTR = {
   campaign_id: string
@@ -130,37 +119,62 @@ export async function getWasteSearchTerms(
     .sort((a, b) => b.spend - a.spend)
 }
 
-export async function getHarvestCandidates(
+async function fetchAutoTerms(
   brandId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
 ): Promise<SearchTermRow[]> {
   // INB-36 stopgap: campaigns.targeting_type is never populated by CSV
-  // ingestion (column is missing from the SP Campaign Performance report).
-  // Detect auto campaigns by name convention. SP.A prefix = Auto targeting,
-  // parallel to SP./SB./SBV. ad-type prefixes documented in CLAUDE.md.
+  // ingestion. Detect auto campaigns by name convention — SP.A prefix.
   const { data: autoCampaigns, error: autoErr } = await supabaseAdmin
     .from('campaigns')
     .select('id')
     .eq('brand_id', brandId)
     .ilike('campaign_name', 'SP.A%')
 
-  if (autoErr) throw new Error(`getHarvestCandidates campaigns failed: ${autoErr.message}`)
+  if (autoErr) throw new Error(`fetchAutoTerms campaigns failed: ${autoErr.message}`)
 
   const autoCampaignIds = new Set((autoCampaigns ?? []).map(c => c.id))
   if (autoCampaignIds.size === 0) return []
 
   const { rows, meta } = await fetchSearchTerms(brandId, startDate, endDate)
   const autoRows = rows.filter(r => autoCampaignIds.has(r.campaign_id))
-  const terms    = aggregateByTerm(autoRows, meta)
+  return aggregateByTerm(autoRows, meta)
+}
 
+export async function getHarvestCandidates(
+  brandId: string,
+  startDate: string,
+  endDate: string,
+): Promise<SearchTermRow[]> {
+  const terms = await fetchAutoTerms(brandId, startDate, endDate)
   return terms
     .filter(t =>
-      t.orders >= HARVEST_MIN_ORDERS &&
-      t.clicks >= HARVEST_MIN_CLICKS &&
-      t.roas !== null && t.roas >= HARVEST_MIN_ROAS
+      t.orders >= HARVEST_INVESTIGATION_THRESHOLDS.minOrders &&
+      t.clicks >= HARVEST_INVESTIGATION_THRESHOLDS.minClicks &&
+      t.roas !== null && t.roas >= HARVEST_INVESTIGATION_THRESHOLDS.minRoas
     )
     .sort((a, b) => b.sales - a.sales)
+}
+
+export async function getHarvestCandidatesTiered(
+  brandId: string,
+  startDate: string,
+  endDate: string,
+): Promise<{ ready: SearchTermRow[]; investigation: SearchTermRow[] }> {
+  const terms = await fetchAutoTerms(brandId, startDate, endDate)
+  const qualified = terms.filter(t =>
+    t.orders >= HARVEST_INVESTIGATION_THRESHOLDS.minOrders &&
+    t.clicks >= HARVEST_INVESTIGATION_THRESHOLDS.minClicks &&
+    t.roas !== null
+  )
+  const ready = qualified
+    .filter(t => t.roas! >= HARVEST_READY_THRESHOLDS.minRoas)
+    .sort((a, b) => b.sales - a.sales)
+  const investigation = qualified
+    .filter(t => t.roas! >= HARVEST_INVESTIGATION_THRESHOLDS.minRoas && t.roas! < HARVEST_READY_THRESHOLDS.minRoas)
+    .sort((a, b) => b.sales - a.sales)
+  return { ready, investigation }
 }
 
 export async function getSearchTermsByMatchType(

@@ -1,5 +1,6 @@
 import type { PPCSnapshot, PPCStatRow } from '@/lib/dashboard/types';
 import { CampaignWatchlist } from './CampaignWatchlist';
+import { HarvestSection } from './HarvestSection';
 
 const VAL_TONE = {
   neutral:  'text-[#e2e8f0]',
@@ -33,6 +34,8 @@ export function PPCAtAGlance({
           sbAvailableFrom={sbAvailableFrom}
         />
       ))}
+
+      <HarvestSection ready={data.harvestReady} investigation={data.harvestInvestigation} />
 
       <div className="text-[8px] tracking-[0.1em] text-[#3b82f6] mt-[10px] mb-[4px] flex items-center gap-[6px]">
         CAMPAIGN WATCHLIST
