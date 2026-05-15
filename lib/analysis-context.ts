@@ -317,6 +317,30 @@ Scale Insights automation is active — regularly audit bid change log for rule 
 
 ---
 
+PAID AD PERFORMANCE DATA ARCHITECTURE
+
+All paid ad performance metrics (Sponsored Products, Sponsored Brands, and Sponsored Brands Video) live in a SINGLE table called sp_campaign_performance. The table is named after SP for legacy reasons but contains ALL ad types.
+
+The ad_type column distinguishes between ad types:
+- 'SP' — Sponsored Products
+- 'SB' — Sponsored Brands
+- 'SBV' — Sponsored Brands Video
+
+When analyzing ad performance, ALWAYS filter or group by ad_type when the question is about a specific ad type. Do NOT assume the table contains only SP data based on its name.
+
+DATA AVAILABILITY BY AD TYPE:
+- SP: full history available from May 2025 onward
+- SB: available from March 1, 2026 onward
+- SBV: available from March 1, 2026 onward
+
+Historical context: Amazon's Ads Console has a 60-day retention limit on SB and SBV data. This affected our ability to RETROACTIVELY backfill SB/SBV data prior to March 2026. From March 2026 onward, we ingest SB and SBV data monthly into sp_campaign_performance — it is stored in our database and is fully queryable, not subject to Amazon's rolling window.
+
+CRITICAL: When asked about SB or SBV performance from March 2026 onward, analyze the data with the same confidence and depth as SP analysis. Do NOT refuse or hedge citing the 60-day limit — that limit only prevented backfilling data older than March 2026. It does not restrict access to data already ingested into our database.
+
+When asked about SB or SBV from BEFORE March 2026, explicitly acknowledge the historical gap (pre-March-2026 SB/SBV is permanently unrecoverable from Amazon) and note that Q4 2025 blended totals reflect SP-only activity.
+
+---
+
 ATTRIBUTION AND DATA NUANCES
 
 Attribution windows (NOT directly comparable):
@@ -325,13 +349,13 @@ Attribution windows (NOT directly comparable):
 - Always note attribution window when comparing SP vs SB/SBV ROAS
 
 Data coverage:
-- Platform currently contains March 2026 data only
-- Historical backfill in progress — 12 months target
-- CONFIRMED findings: directly observable patterns valid on single-month data (waste, naming issues, structural imbalances)
-- PROBABLE findings: inferences from data that are likely but require validation
-- HYPOTHESIS: requires multiple months to validate — flag explicitly as preliminary
+- SP: full history from May 2025 onward (12+ months)
+- SB + SBV: available from March 2026 onward
+- CONFIRMED findings: directly observable patterns valid from available data
+- PROBABLE findings: inferences that are likely but require validation across more months
+- HYPOTHESIS: multi-month trends require 3+ months of consistent data — flag as preliminary
 
-Do not make confident trend claims until 3+ months of data are loaded.
+Do not make confident multi-month trend claims for SB/SBV until additional months accumulate.
 
 ---
 
@@ -422,21 +446,24 @@ export const DATA_COMPLETENESS_NOTE = (
     `Trend analysis will strengthen as historical backfill progresses. ` +
     `Treat trend-based findings as HYPOTHESIS until 3+ months are loaded.`
 
+  const sbStart = sbAvailableFrom ?? 'March 2026'
+
   const ppcAvailability =
-    `\n\nPPC DATA AVAILABILITY:\n` +
+    `\n\nPPC DATA AVAILABILITY IN THIS CONTEXT:\n` +
     `- Sponsored Products (SP): complete from earliest backfill date onward\n` +
     `- Sponsored Brands (SB) + Sponsored Brands Video (SBV): ` +
     (sbAvailableFrom
-      ? `complete from ${sbAvailableFrom} onward; unavailable before that due to Amazon Ads Console 60-day retention limit`
-      : `not yet in database — awaiting backfill`) +
-    `\n- IMPORTANT — SB/SBV 60-day rolling retention: Amazon Ads Console retains SB and SBV campaign ` +
-    `performance data for only 60 days. This is a rolling window, not a fixed cutoff — data older than ` +
-    `60 days from today is permanently unavailable for SB/SBV regardless of when it was originally ingested. ` +
-    `Any period query whose start date precedes today-minus-60d will lack SB/SBV attribution entirely.\n` +
-    `- For any period query spanning or preceding the SB/SBV cutoff: blended PPC totals ` +
-    `(Total Spend, Blended ROAS, MER, Organic Revenue) reflect SP-only ad activity. ` +
-    `When SB/SBV data is absent, always caveat that true total spend is higher, ` +
-    `and that reported ROAS and MER therefore overstate the full-program figures.`
+      ? `available from ${sbAvailableFrom} onward — stored in sp_campaign_performance (ad_type = 'SB' / 'SBV'), fully queryable`
+      : `not yet in database — awaiting first monthly ingest`) +
+    `\n- IMPORTANT: SB/SBV data from ${sbStart} onward exists in our database and is NOT subject to ` +
+    `Amazon's 60-day Ads Console retention window. Analyze it with the same confidence as SP data. ` +
+    `Do NOT refuse or hedge citing the 60-day limit for any period from ${sbStart} onward.\n` +
+    `- The 60-day Amazon Ads Console retention limit explains only why SB/SBV data BEFORE ${sbStart} ` +
+    `could not be backfilled — that historical data is permanently unrecoverable. ` +
+    `This is a backfill constraint, not a query constraint on current data.\n` +
+    `- For periods BEFORE ${sbStart}: blended PPC totals reflect SP-only activity. ` +
+    `Always caveat that true total spend for those earlier periods is higher, ` +
+    `and reported ROAS and MER therefore overstate full-program figures.`
 
   const q4Note =
     `\n\nQ4 2025 COVERAGE GAPS (Oct–Dec 2025):\n` +

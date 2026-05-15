@@ -28,6 +28,8 @@ async function fetchCampaignPerf(
         .eq('brand_id', brandId)
         .gte('report_date', startDate)
         .lte('report_date', endDate)
+        .order('report_date', { ascending: true })
+        .order('campaign_id', { ascending: true })
     ),
     supabaseAdmin
       .from('campaigns')
