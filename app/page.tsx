@@ -8,6 +8,7 @@ import { SearchIntelligence } from '@/components/dashboard/SearchIntelligence';
 import { Footer } from '@/components/dashboard/Footer';
 import { resolvePeriod } from '@/lib/dashboard/period';
 import { BRAND_ID, loadDashboardData } from '@/lib/dashboard/data';
+import { UploadStatusWidget } from '@/components/upload-tracker/UploadStatusWidget';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,10 @@ export default async function CommandCenter({
 
       <div className="mx-auto max-w-[1600px] px-4">
         <AgentAlerts alerts={data.alerts} summary={data.alertSummary} />
+      </div>
+
+      <div className="mx-auto max-w-[1600px] px-4">
+        <UploadStatusWidget />
       </div>
 
       <div className="mx-auto max-w-[1600px] px-4">
