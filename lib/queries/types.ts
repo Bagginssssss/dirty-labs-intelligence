@@ -34,6 +34,9 @@ export interface CampaignRow {
   cvr: number | null
   ntb_orders: number
   ntb_rate: number | null
+  current_status: 'ENABLED' | 'PAUSED' | null
+  latest_spend_date: string | null
+  is_likely_active: boolean
 }
 
 export interface SearchTermRow {

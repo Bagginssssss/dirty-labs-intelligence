@@ -11,6 +11,8 @@ type RawPerf = {
   clicks: number
   impressions: number
   ntb_orders_14d: number | null
+  status: string | null
+  report_date: string
 }
 
 type CampaignMeta = { id: string; campaign_name: string | null; ad_type: string | null; targeting_type: string | null; launch_date: string | null }
@@ -24,7 +26,7 @@ async function fetchCampaignPerf(
     fetchAll<RawPerf>(() =>
       supabaseAdmin
         .from('sp_campaign_performance')
-        .select('campaign_id, ad_type, spend, sales_7d, orders_7d, clicks, impressions, ntb_orders_14d')
+        .select('campaign_id, ad_type, spend, sales_7d, orders_7d, clicks, impressions, ntb_orders_14d, status, report_date')
         .eq('brand_id', brandId)
         .gte('report_date', startDate)
         .lte('report_date', endDate)
@@ -47,23 +49,38 @@ async function fetchCampaignPerf(
   return { perf, meta }
 }
 
+const ACTIVE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000
+
 function aggregateByCampaign(
   perf: RawPerf[],
   meta: Map<string, CampaignMeta>
 ): CampaignRow[] {
-  const acc = new Map<string, CampaignRow>()
+  // Anchor is_likely_active to data recency, not CURRENT_DATE.
+  // Ingestion lag (e.g. data stops Apr 30 but today is May 15) would mark all campaigns
+  // inactive if we used Date.now() as the reference.
+  let dataMaxDate = ''
+  for (const row of perf) {
+    if (row.report_date > dataMaxDate) dataMaxDate = row.report_date
+  }
+  const dataMaxMs = dataMaxDate ? new Date(dataMaxDate + 'T00:00:00Z').getTime() : 0
 
+  const acc = new Map<string, CampaignRow>()
+  // Separate tracker avoids mutating CampaignRow with intermediate build state.
+  const tracker = new Map<string, { latestStatus: string | null; latestSpendDate: string | null }>()
+
+  // Rows arrive ascending by report_date (ORDER BY report_date ASC) so the last
+  // non-null status seen per campaign is the most recent.
   for (const row of perf) {
     const cid  = row.campaign_id
     const info = meta.get(cid)
 
     if (!acc.has(cid)) {
       acc.set(cid, {
-        campaign_uuid: cid,
-        campaign_name: info?.campaign_name ?? null,
-        ad_type:       info?.ad_type ?? row.ad_type ?? null,
+        campaign_uuid:  cid,
+        campaign_name:  info?.campaign_name ?? null,
+        ad_type:        info?.ad_type ?? row.ad_type ?? null,
         targeting_type: info?.targeting_type ?? null,
-        launch_date:   info?.launch_date ?? null,
+        launch_date:    info?.launch_date ?? null,
         spend:     0,
         sales:     0,
         orders:    0,
@@ -74,7 +91,11 @@ function aggregateByCampaign(
         acos:      null,
         cvr:       null,
         ntb_rate:  null,
+        current_status:    null,
+        latest_spend_date: null,
+        is_likely_active:  false,
       })
+      tracker.set(cid, { latestStatus: null, latestSpendDate: null })
     }
 
     const agg = acc.get(cid)!
@@ -84,13 +105,33 @@ function aggregateByCampaign(
     agg.clicks      += Number(row.clicks) || 0
     agg.impressions += Number(row.impressions) || 0
     agg.ntb_orders  += Number(row.ntb_orders_14d) || 0
+
+    const t = tracker.get(cid)!
+    if (row.status !== null && row.status !== undefined) t.latestStatus = row.status
+    if ((Number(row.spend) || 0) > 0 && row.report_date > (t.latestSpendDate ?? '')) {
+      t.latestSpendDate = row.report_date
+    }
   }
 
-  for (const row of acc.values()) {
+  for (const [cid, row] of acc.entries()) {
     row.roas     = row.spend > 0 ? row.sales / row.spend : null
     row.acos     = row.sales > 0 ? row.spend / row.sales : null
     row.cvr      = row.clicks > 0 ? row.orders / row.clicks : null
     row.ntb_rate = row.orders > 0 ? row.ntb_orders / row.orders : null
+
+    const t = tracker.get(cid)!
+    const status = (t.latestStatus === 'ENABLED' || t.latestStatus === 'PAUSED')
+      ? t.latestStatus
+      : null
+    row.current_status    = status
+    row.latest_spend_date = t.latestSpendDate
+
+    if (t.latestSpendDate && dataMaxMs > 0 && status !== 'PAUSED') {
+      const spendMs = new Date(t.latestSpendDate + 'T00:00:00Z').getTime()
+      row.is_likely_active = (dataMaxMs - spendMs) <= ACTIVE_WINDOW_MS
+    } else {
+      row.is_likely_active = false
+    }
   }
 
   return Array.from(acc.values())

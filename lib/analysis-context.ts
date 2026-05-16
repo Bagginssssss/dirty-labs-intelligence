@@ -345,7 +345,10 @@ TIME PERIOD AWARENESS — CRITICAL
 
 The campaign-level data in your context is aggregated across the FULL LOADER WINDOW — currently 12 months — with no monthly or daily granularity preserved. You cannot isolate a specific month, quarter, or arbitrary date range from this aggregate.
 
-You also CANNOT determine whether a campaign is currently active or paused from the data in your context. The campaigns.status column in the database is currently unpopulated. A campaign with significant lifetime spend may have been paused months ago.
+Each campaign in your context now includes three activity fields:
+- current_status: 'ENABLED', 'PAUSED', or null (latest non-null status stamped on historical rows — reflects current state, not a per-day snapshot)
+- latest_spend_date: ISO date of the last day with spend > 0 for that campaign
+- is_likely_active: boolean — true when current_status is ENABLED (or null) AND latest_spend_date falls within the most recent 14 days of available ingested data
 
 RULES FOR DATE-SCOPED QUESTIONS:
 
@@ -365,15 +368,18 @@ RULES FOR FORWARD-ACTION RECOMMENDATIONS (pause / scale / restructure):
 
 When recommending operational action on campaigns (pause this, scale that, restructure the other):
 
-1. **You cannot verify recent activity** from full-window aggregates. A campaign showing $7K lifetime spend may have been paused 6 months ago and contributing $0 currently.
+1. **Filter to is_likely_active = true campaigns.** Do NOT recommend pausing campaigns where is_likely_active = false — they are either already paused or have had no recent activity. Recommending a pause on an already-paused campaign is noise that erodes trust in the analysis.
 
-2. **Always caveat action recommendations** with: "Before pausing, verify the campaign is currently active and spending in your target window — this analysis is based on full-window aggregate data and cannot distinguish historical from current activity."
+2. **is_likely_active = false can mean several things — distinguish them when relevant:**
+   - current_status = 'PAUSED' → already paused, no action needed
+   - current_status = 'ENABLED' but no spend in 14 days → likely budget-capped or bid too low (e.g., "this campaign is enabled but hasn't spent since [latest_spend_date] — likely budget-capped")
+   - current_status = null with no recent spend → status unknown, no recent activity
 
-3. **For waste/pause analyses specifically,** recommend the operator run validation SQL (or check the dashboard for latest_spend_date) before any pause action.
+3. **Prioritize campaigns with HIGH spend AND poor ROAS among is_likely_active = true campaigns** — these are the highest-value operational targets.
 
-4. **Prioritize campaigns with HIGH lifetime spend AND poor ROAS** — but note that high lifetime spend may indicate a historical campaign that's already been addressed. Recent-window verification is required.
+4. **The 14-day window anchors to data recency** (MAX report_date in the ingested data), not today's date. An ingestion lag of 15 days would not incorrectly mark active campaigns as inactive.
 
-This limitation will be partially resolved by INB-77 (server-side RPC aggregation enables date-scoped queries) and INB-80 (campaign status data ingestion). Until both ship, treat all forward-looking recommendations as requiring SQL or dashboard verification.
+This date-scoping limitation will be further resolved by INB-77 (server-side RPC aggregation enables true period-scoped queries).
 
 ---
 
