@@ -31,6 +31,10 @@ const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   business_report:             'brand_id,asin_id,report_date',
   business_report_daily:       'brand_id,report_date',
   sp_campaign_performance:     'brand_id,campaign_id,report_date,ad_type',
+  // Rolling-pull tables — constraint added in migration 030 (INB-82)
+  sp_search_term_report:       'brand_id,campaign_id,ad_group_id,report_date,customer_search_term,targeting',
+  sp_targeting_report:         'brand_id,campaign_id,ad_group_id,report_date,targeting,match_type',
+  purchased_product_report:    'brand_id,campaign_id,report_date,advertised_asin,purchased_asin',
   derived_metrics_daily:       'brand_id,metric_date',
   derived_metrics_weekly:      'brand_id,week_start',
   subscribe_and_save:              'brand_id,asin_id,sku,report_date',
