@@ -135,7 +135,7 @@ export const REPORT_REGISTRY: ReportRegistryEntry[] = [
     pull_window_days: 14,
     granularity: 'weekly',
     display_order: 100,
-    notes: 'Mostly stable on arrival. 14d pull window provides light reconciliation cushion.',
+    notes: 'Pulled weekly (Monday/Tuesday startup task). Brand Analytics SQP reports have period-end anchored row dates; historical monthly-aggregated uploads may show mixed anchors. 14d pull window for reconciliation overlap.',
   },
   {
     internal_id: 'brand_analytics_customer_loyalty',
@@ -143,11 +143,11 @@ export const REPORT_REGISTRY: ReportRegistryEntry[] = [
     source_platform: 'Brand Analytics',
     source_table: 'brand_analytics_customer_loyalty',
     date_column: 'period_end_date',
-    cadence: 'monthly',
+    cadence: 'weekly',
     pull_window_days: 30,
     granularity: 'weekly',
     display_order: 110,
-    notes: 'Per INB-29. Date column is period_end_date (not report_date). Stable monthly snapshot — pulled monthly, contains weekly rows. 30d pull window captures the last month of weekly rows.',
+    notes: 'Per INB-29. Date column is period_end_date (not report_date). Pulled weekly (Monday/Tuesday startup task); rows have weekly period_end_date anchors. 30d pull window for reconciliation overlap.',
   },
 
   // Scale Insights

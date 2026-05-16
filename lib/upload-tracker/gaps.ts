@@ -98,14 +98,19 @@ export function detectGaps(
   entry: ReportRegistryEntry,
   sourceDates: string[],
 ): GapAnalysis {
-  // pull_window_days === 'snapshot' means the data is taken as a point-in-time snapshot
-  // (e.g., SmartScout monthly subcategory reports), not a deterministic-anchor cadence —
-  // gap detection doesn't apply even though granularity may be 'monthly' or 'weekly'.
+  // Skip gap detection for:
+  // - 'pending': not yet formalized, no expected cadence
+  // - 'snapshot' / 'per_order': point-in-time or sparse by design
+  // - pull_window_days === 'snapshot': no deterministic anchor (e.g. SmartScout monthly)
+  // - 'weekly' granularity: source rows use period-end anchors (e.g. last day of the week)
+  //   that vary by upload batch; the min(sourceDates) anchor strategy produces false positives
+  //   (e.g. SQP and customer_loyalty historical monthly-aggregated uploads show mixed anchors)
   const skip =
     entry.cadence === 'pending' ||
     entry.granularity === 'snapshot' ||
     entry.granularity === 'per_order' ||
-    entry.pull_window_days === 'snapshot';
+    entry.pull_window_days === 'snapshot' ||
+    entry.granularity === 'weekly';
 
   if (sourceDates.length === 0) {
     return { withinWindow: [], historical: [], coverageStart: null, coverageEnd: null };
