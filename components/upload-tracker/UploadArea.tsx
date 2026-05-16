@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { refreshTrackerCache } from '@/app/upload/actions'
 
 interface IngestResult {
   status: string
@@ -63,6 +64,7 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
       const json: IngestResult = await res.json()
       setResult(json)
       if (json.status === 'ok') {
+        await refreshTrackerCache()
         router.refresh()
       }
     } catch (err) {

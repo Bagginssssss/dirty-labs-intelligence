@@ -1,3 +1,4 @@
+import { unstable_cache } from 'next/cache';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { fetchAll } from '@/lib/queries/fetch-all';
 import { REPORT_REGISTRY, ReportRegistryEntry } from './registry';
@@ -24,7 +25,7 @@ export type EffectiveFreshness = {
 
 export type TrackerRow = {
   entry: ReportRegistryEntry;
-  lastUpload: Date | null;
+  lastUpload: string | null;
   lastUploadEvent: UploadEvent | null;
   daysSinceLastUpload: number | null;
   reportStatus: ReportStatus;
@@ -44,7 +45,7 @@ const ATTRIBUTION_WINDOW_DAYS: Record<string, number> = {
   'Scale Insights': 0,
 };
 
-export async function loadTrackerData(brandId: string): Promise<TrackerRow[]> {
+async function _loadTrackerData(brandId: string): Promise<TrackerRow[]> {
   const today = new Date();
 
   // Fetch all log events for this brand, newest first per report_type.
@@ -87,11 +88,12 @@ export async function loadTrackerData(brandId: string): Promise<TrackerRow[]> {
       const events          = logMap.get(entry.internal_id) ?? [];
       const lastUploadEvent = events[0] ?? null;
       const uploadHistory   = events.slice(0, 5);
-      const lastUpload      = lastUploadEvent ? new Date(lastUploadEvent.ingested_at) : null;
-      const daysSinceLastUpload = lastUpload
-        ? Math.floor((today.getTime() - lastUpload.getTime()) / 86_400_000)
+      const lastUpload      = lastUploadEvent ? lastUploadEvent.ingested_at : null;
+      const lastUploadDate  = lastUpload ? new Date(lastUpload) : null;
+      const daysSinceLastUpload = lastUploadDate
+        ? Math.floor((today.getTime() - lastUploadDate.getTime()) / 86_400_000)
         : null;
-      const reportStatus          = calculateStatus(entry, lastUpload, today);
+      const reportStatus          = calculateStatus(entry, lastUploadDate, today);
       const attributionWindowDays = ATTRIBUTION_WINDOW_DAYS[entry.source_platform] ?? 0;
 
       let coverageStart: string | null = null;
@@ -189,3 +191,9 @@ export async function loadTrackerData(brandId: string): Promise<TrackerRow[]> {
   // REPORT_REGISTRY is already sorted by display_order — preserve input order
   return rows;
 }
+
+export const loadTrackerData = unstable_cache(
+  _loadTrackerData,
+  ['tracker-data'],
+  { revalidate: 60, tags: ['tracker-data'] },
+);

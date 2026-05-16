@@ -74,8 +74,8 @@ function applySort(rows: TrackerRow[], sort: SortState): TrackerRow[] {
         break
       case 'lastUpload':
         cmp = nullLast(
-          a.lastUpload ? a.lastUpload.toISOString() : null,
-          b.lastUpload ? b.lastUpload.toISOString() : null,
+          a.lastUpload,
+          b.lastUpload,
           (x, y) => x.localeCompare(y),
         )
         break
@@ -183,7 +183,7 @@ function TableRow({
   const statusColor = STATUS_COLORS[row.reportStatus]
 
   const lastUploadStr = row.lastUpload
-    ? row.lastUpload.toISOString().slice(0, 10)
+    ? row.lastUpload.slice(0, 10)
     : '—'
 
   const daysStr = row.daysSinceLastUpload !== null && !isPending
