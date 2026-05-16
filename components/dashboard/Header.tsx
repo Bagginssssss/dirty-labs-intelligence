@@ -1,18 +1,12 @@
 import Link from 'next/link';
 import { fmtDateLong } from '@/lib/dashboard/format';
+import { BRAND_ID } from '@/lib/dashboard/data';
+import { loadTrackerData } from '@/lib/upload-tracker/data';
+import { NavLinks } from './NavLinks';
 
-const NAV = [
-  { href: '/',         label: 'Dashboard' },
-  { href: '/upload',   label: 'Upload' },
-  { href: '/ppc',      label: 'PPC' },
-  { href: '/seo',      label: 'SEO' },
-  { href: '/business', label: 'Business' },
-];
-
-export function Header({ today }: { today: Date }) {
-  // Active route — for now hardcode '/' since this is the dashboard. When you
-  // build other pages, lift Header to a shared layout and read pathname.
-  const activeHref = '/';
+export async function Header({ today }: { today: Date }) {
+  const rows = await loadTrackerData(BRAND_ID);
+  const overdueCount = rows.filter(r => r.reportStatus === 'overdue').length;
 
   return (
     <header className="border-b border-[#1e1e2e]">
@@ -21,21 +15,7 @@ export function Header({ today }: { today: Date }) {
           DL INTELLIGENCE
         </Link>
 
-        <nav className="text-[11px] text-[#64748b]">
-          {NAV.map((item, i) => (
-            <span key={item.href}>
-              {i > 0 && <span className="mx-2 text-[#475569]">·</span>}
-              <Link
-                href={item.href}
-                className={`hover:text-[#94a3b8] transition-colors ${
-                  item.href === activeHref ? 'text-[#3b82f6]' : ''
-                }`}
-              >
-                {item.label}
-              </Link>
-            </span>
-          ))}
-        </nav>
+        <NavLinks overdueCount={overdueCount} />
 
         <div className="text-[11px] text-[#64748b]">
           {fmtDateLong(today)}
