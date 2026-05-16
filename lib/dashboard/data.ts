@@ -1252,34 +1252,13 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
 async function loadStatus(): Promise<IngestStatus> {
   const { data, error } = await supabaseAdmin
     .from('report_ingestion_log')
-    .select('report_type, date_range_start, rows_stored, ingested_at')
+    .select('date_range_start')
     .eq('brand_id', BRAND_ID)
     .eq('status', 'success');
 
   if (error || !data || data.length === 0) {
-    return {
-      lastIngest: '—',
-      totalRows: 0,
-      reportTypeCount: 0,
-      monthsLoaded: 0,
-      backfillStatus: 'not started',
-      overdueReports: [],
-      spApiConnected: false,
-    };
+    return { monthsLoaded: 0, backfillStatus: 'not started', spApiConnected: false };
   }
-
-  // max(ingested_at)
-  const lastIngest = data
-    .map(r => r.ingested_at as string)
-    .sort()
-    .at(-1)
-    ?.slice(0, 10) ?? '—';
-
-  // sum(rows_stored)
-  const totalRows = data.reduce((acc, r) => acc + (Number(r.rows_stored) || 0), 0);
-
-  // count distinct report_type
-  const reportTypeCount = new Set(data.map(r => r.report_type as string)).size;
 
   // count distinct YYYY-MM from date_range_start (data period, not ingestion timestamp)
   const months = new Set(
@@ -1290,12 +1269,8 @@ async function loadStatus(): Promise<IngestStatus> {
   const monthsLoaded = months.size;
 
   return {
-    lastIngest,
-    totalRows,
-    reportTypeCount,
     monthsLoaded,
     backfillStatus: monthsLoaded >= 12 ? 'complete' : 'in progress',
-    overdueReports: [],
     spApiConnected: false,
   };
 }

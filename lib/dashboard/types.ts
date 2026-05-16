@@ -179,12 +179,8 @@ export type SearchIntelData = {
 };
 
 export type IngestStatus = {
-  lastIngest: string;
-  totalRows: number;
-  reportTypeCount: number;
   monthsLoaded: number;
   backfillStatus: string;
-  overdueReports: { name: string; daysLate: number }[];
   spApiConnected: boolean;
 };
 
