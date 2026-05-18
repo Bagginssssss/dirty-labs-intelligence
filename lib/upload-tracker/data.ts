@@ -85,9 +85,17 @@ async function _loadTrackerData(brandId: string): Promise<TrackerRow[]> {
   // Per-entry source-table queries fire in parallel via Promise.all
   const rows = await Promise.all(
     REPORT_REGISTRY.map(async (entry): Promise<TrackerRow> => {
-      const events          = logMap.get(entry.internal_id) ?? [];
+      // Merge events from current internal_id and any legacy IDs (Option A: legacy_report_ids).
+      // Re-sort by ingested_at desc after merging since each logMap bucket is independently sorted.
+      const allIds = [entry.internal_id, ...(entry.legacy_report_ids ?? [])];
+      const mergedEvents: UploadEvent[] = [];
+      for (const id of allIds) {
+        for (const ev of logMap.get(id) ?? []) mergedEvents.push(ev);
+      }
+      mergedEvents.sort((a, b) => b.ingested_at.localeCompare(a.ingested_at));
+      const events          = mergedEvents.slice(0, 5);
       const lastUploadEvent = events[0] ?? null;
-      const uploadHistory   = events.slice(0, 5);
+      const uploadHistory   = events;
       const lastUpload      = lastUploadEvent ? lastUploadEvent.ingested_at : null;
       const lastUploadDate  = lastUpload ? new Date(lastUpload) : null;
       const daysSinceLastUpload = lastUploadDate
@@ -111,13 +119,16 @@ async function _loadTrackerData(brandId: string): Promise<TrackerRow[]> {
             // fetchAll with only the date column, then deduplicate client-side.
             // Preserves ascending order from ORDER BY so Set insertion is sorted.
             type DateRow = Record<string, unknown>;
-            const allRows = await fetchAll<DateRow>(() =>
-              supabaseAdmin
+            const allRows = await fetchAll<DateRow>(() => {
+              let q = supabaseAdmin
                 .from(entry.source_table)
                 .select(entry.date_column)
-                .eq('brand_id', brandId)
-                .order(entry.date_column, { ascending: true })
-            );
+                .eq('brand_id', brandId);
+              if (entry.source_filter) {
+                q = q.in(entry.source_filter.column, entry.source_filter.values);
+              }
+              return q.order(entry.date_column, { ascending: true });
+            });
             const seen = new Set<string>();
             for (const row of allRows) {
               const d = String(row[entry.date_column] ?? '').slice(0, 10);
@@ -130,18 +141,26 @@ async function _loadTrackerData(brandId: string): Promise<TrackerRow[]> {
             // snapshot / per_order — two limit-1 queries for min and max
             type DateRow = Record<string, unknown>;
             const [minRes, maxRes] = await Promise.all([
-              supabaseAdmin
-                .from(entry.source_table)
-                .select(entry.date_column)
-                .eq('brand_id', brandId)
-                .order(entry.date_column, { ascending: true })
-                .limit(1),
-              supabaseAdmin
-                .from(entry.source_table)
-                .select(entry.date_column)
-                .eq('brand_id', brandId)
-                .order(entry.date_column, { ascending: false })
-                .limit(1),
+              (() => {
+                let q = supabaseAdmin
+                  .from(entry.source_table)
+                  .select(entry.date_column)
+                  .eq('brand_id', brandId);
+                if (entry.source_filter) {
+                  q = q.in(entry.source_filter.column, entry.source_filter.values);
+                }
+                return q.order(entry.date_column, { ascending: true }).limit(1);
+              })(),
+              (() => {
+                let q = supabaseAdmin
+                  .from(entry.source_table)
+                  .select(entry.date_column)
+                  .eq('brand_id', brandId);
+                if (entry.source_filter) {
+                  q = q.in(entry.source_filter.column, entry.source_filter.values);
+                }
+                return q.order(entry.date_column, { ascending: false }).limit(1);
+              })(),
             ]);
             const minRow = (minRes.data?.[0] as unknown as DateRow) ?? null;
             const maxRow = (maxRes.data?.[0] as unknown as DateRow) ?? null;

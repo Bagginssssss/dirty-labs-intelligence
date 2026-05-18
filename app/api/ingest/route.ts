@@ -251,6 +251,7 @@ async function resolveRows(
 export async function POST(request: Request) {
   let brandId = ''
   let reportType = 'unknown'
+  let effectiveReportType = 'unknown'
   let tableName = ''
   let detectionHint: string | undefined
   let rowsReceived = 0
@@ -324,6 +325,17 @@ export async function POST(request: Request) {
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
 
+    // Derive effective report type for sp_campaign_performance.
+    // SP uploads include "Program Type" = "Sponsored Products"; SB uploads omit the column (null).
+    // The mapper stores it as program_type. First row wins.
+    effectiveReportType = reportType;
+    if (tableName === 'sp_campaign_performance' && mappedRows.length > 0) {
+      const programType = (mappedRows[0] as Record<string, unknown>).program_type as string | null | undefined;
+      effectiveReportType = (programType != null && programType !== '')
+        ? 'sp_campaign_performance__sp'
+        : 'sp_campaign_performance__sb';
+    }
+
     // 4. Resolve FK references (campaigns, ad_groups, asins)
     const { resolved, rejected: fkRejected } = await resolveRows(mappedRows, reportType, brandId)
     rowsRejected += fkRejected
@@ -349,7 +361,7 @@ export async function POST(request: Request) {
     // 6. Log ingestion
     await supabaseAdmin.from('report_ingestion_log').insert({
       brand_id: brandId,
-      report_type: reportType,
+      report_type: effectiveReportType,
       source_platform: 'csv_upload',
       date_range_start: dateRangeStart || null,
       date_range_end: dateRangeEnd || null,
@@ -385,7 +397,7 @@ export async function POST(request: Request) {
       try {
         await supabaseAdmin.from('report_ingestion_log').insert({
           brand_id: brandId,
-          report_type: reportType,
+          report_type: effectiveReportType,
           source_platform: 'csv_upload',
           rows_received: rowsReceived,
           rows_stored: rowsStored,

@@ -9,13 +9,17 @@ export type ReportRegistryEntry = {
   granularity: 'daily' | 'weekly' | 'monthly' | 'snapshot' | 'per_order';
   display_order: number;
   notes?: string;
+  /** Filters source-table queries to a subset of rows (e.g. a specific ad_type). Applied via .in(). */
+  source_filter?: { column: string; values: string[] };
+  /** Old internal_id values that map to this entry in report_ingestion_log. Upload history merges events from all IDs. */
+  legacy_report_ids?: string[];
 };
 
 export const REPORT_REGISTRY: ReportRegistryEntry[] = [
   // Amazon Ads
   {
-    internal_id: 'sp_campaign_performance',
-    display_name: 'SP/SB/SBV Campaign Performance',
+    internal_id: 'sp_campaign_performance__sp',
+    display_name: 'SP Campaign Performance',
     source_platform: 'Amazon Ads',
     source_table: 'sp_campaign_performance',
     date_column: 'report_date',
@@ -23,7 +27,23 @@ export const REPORT_REGISTRY: ReportRegistryEntry[] = [
     pull_window_days: 30,
     granularity: 'daily',
     display_order: 10,
-    notes: 'All ad types via ad_type column. 30d pull window covers 14-21d attribution reconciliation.',
+    source_filter: { column: 'ad_type', values: ['SP'] },
+    legacy_report_ids: ['sp_campaign_performance'],
+    notes: 'Sponsored Products only (ad_type=SP). 30d pull window covers 7-14d attribution reconciliation.',
+  },
+  {
+    internal_id: 'sp_campaign_performance__sb',
+    display_name: 'SB/SBV Campaign Performance',
+    source_platform: 'Amazon Ads',
+    source_table: 'sp_campaign_performance',
+    date_column: 'report_date',
+    cadence: 'weekly',
+    pull_window_days: 30,
+    granularity: 'daily',
+    display_order: 12,
+    source_filter: { column: 'ad_type', values: ['SB', 'SBV'] },
+    legacy_report_ids: ['sp_campaign_performance'],
+    notes: 'Sponsored Brands + Sponsored Brands Video (ad_type IN SB,SBV). SB and SBV ride in the same Amazon Ads Sponsored Brands CSV. 30d pull window covers 14d attribution reconciliation.',
   },
   {
     internal_id: 'sp_search_term_report',
