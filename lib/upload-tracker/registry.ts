@@ -6,7 +6,7 @@ export type ReportRegistryEntry = {
   date_column: string;
   cadence: 'weekly' | 'monthly' | 'ad_hoc' | 'pending';
   pull_window_days: number | 'snapshot';
-  granularity: 'daily' | 'weekly' | 'monthly' | 'snapshot' | 'per_order';
+  granularity: 'daily' | 'weekly' | 'monthly' | 'snapshot' | 'per_order' | 'period_aggregate';
   display_order: number;
   notes?: string;
   /** Filters source-table queries to a subset of rows (e.g. a specific ad_type). Applied via .in(). */
@@ -115,9 +115,9 @@ export const REPORT_REGISTRY: ReportRegistryEntry[] = [
     date_column: 'report_date',
     cadence: 'weekly',
     pull_window_days: 'snapshot',
-    granularity: 'snapshot',
+    granularity: 'period_aggregate',
     display_order: 70,
-    notes: 'Point-in-time active subscriptions. No reconciliation — each pull is a fresh snapshot. Phase 1 gap detection: skip; only verify latest snapshot is fresh.',
+    notes: 'Period-aggregate rows (each row covers a date range — report_date + date_range_end populated). No reconciliation window — each pull reflects current subscription state. Phase 1 gap detection: skip; only verify latest upload is fresh.',
   },
   {
     internal_id: 'virtual_bundle_sales_snapshots',
@@ -152,10 +152,10 @@ export const REPORT_REGISTRY: ReportRegistryEntry[] = [
     source_table: 'search_query_performance',
     date_column: 'report_date',
     cadence: 'weekly',
-    pull_window_days: 14,
+    pull_window_days: 7,
     granularity: 'weekly',
     display_order: 100,
-    notes: 'Pulled weekly (Monday/Tuesday startup task). Brand Analytics SQP reports have period-end anchored row dates; historical monthly-aggregated uploads may show mixed anchors. 14d pull window for reconciliation overlap.',
+    notes: 'Weekly cadence going forward. Historical data is 12 monthly periods (May 2025 – Apr 2026) plus weekly Saturday-ending periods accumulating from May 2026 forward. Mixed-cadence is supported via the report_date pattern — no explicit granularity column on this table. 7d pull window matches actual re-pullable window for weekly SQP.',
   },
   {
     internal_id: 'brand_analytics_customer_loyalty',
