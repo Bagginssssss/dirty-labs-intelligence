@@ -1,6 +1,15 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { fetchAll } from './fetch-all'
 import { OpportunityRow, CompetitorRow } from './types'
+
+type RpcGapRow = {
+  search_query:            string
+  search_query_volume:     number | null
+  purchases_total:         number | null
+  purchases_brand:         number | null
+  purchases_brand_share:   number | null
+  impressions_brand_share: number | null
+  clicks_brand_share:      number | null
+}
 
 // Returns search queries where brand purchase share is low (< brandShareThreshold)
 // and query volume is above minVolume — high-opportunity terms Dirty Labs isn't winning.
@@ -9,55 +18,29 @@ export async function getSearchQueryGaps(
   startDate: string,
   endDate: string,
   brandShareThreshold = 0.1,
-  minVolume = 500
+  minVolume = 500,
 ): Promise<OpportunityRow[]> {
-  // Aggregate SQP rows by search_query across the date range
-  type SQPRow = Record<string, unknown>
-
-  const rows = await fetchAll<SQPRow>(() =>
-    supabaseAdmin
-      .from('search_query_performance')
-      .select('search_query, search_query_volume, purchases_total, purchases_brand, purchases_brand_share, impressions_brand_share, clicks_brand_share')
-      .eq('brand_id', brandId)
-      .gte('report_date', startDate)
-      .lte('report_date', endDate)
-      .lt('purchases_brand_share', brandShareThreshold)
+  const { data, error } = await supabaseAdmin.rpc(
+    'get_search_query_gaps_aggregated',
+    {
+      p_brand_id:              brandId,
+      p_start_date:            startDate,
+      p_end_date:              endDate,
+      p_brand_share_threshold: brandShareThreshold,
+    },
   )
+  if (error) throw new Error(`get_search_query_gaps_aggregated failed: ${error.message}`)
 
-  const acc = new Map<string, {
-    volume_sum: number; volume_count: number
-    purchases_total: number; purchases_brand: number
-    pbs_sum: number; ibs_sum: number; cbs_sum: number; count: number
-  }>()
-
-  for (const row of rows) {
-    const q = String(row['search_query'] ?? '')
-    if (!acc.has(q)) {
-      acc.set(q, { volume_sum: 0, volume_count: 0, purchases_total: 0, purchases_brand: 0, pbs_sum: 0, ibs_sum: 0, cbs_sum: 0, count: 0 })
-    }
-    const a = acc.get(q)!
-    a.count++
-    if (row['search_query_volume'] !== null) { a.volume_sum += Number(row['search_query_volume']); a.volume_count++ }
-    a.purchases_total  += Number(row['purchases_total']) || 0
-    a.purchases_brand  += Number(row['purchases_brand']) || 0
-    if (row['purchases_brand_share'] !== null)   a.pbs_sum += Number(row['purchases_brand_share'])
-    if (row['impressions_brand_share'] !== null)  a.ibs_sum += Number(row['impressions_brand_share'])
-    if (row['clicks_brand_share'] !== null)       a.cbs_sum += Number(row['clicks_brand_share'])
-  }
-
-  return Array.from(acc.entries())
-    .map(([query, a]) => {
-      const avgVolume = a.volume_count > 0 ? a.volume_sum / a.volume_count : null
-      return {
-        search_query:            query,
-        search_query_volume:     avgVolume,
-        purchases_total:         a.purchases_total > 0 ? a.purchases_total : null,
-        purchases_brand:         a.purchases_brand > 0 ? a.purchases_brand : null,
-        purchases_brand_share:   a.count > 0 ? a.pbs_sum / a.count : null,
-        impressions_brand_share: a.count > 0 ? a.ibs_sum / a.count : null,
-        clicks_brand_share:      a.count > 0 ? a.cbs_sum / a.count : null,
-      }
-    })
+  return ((data ?? []) as RpcGapRow[])
+    .map(row => ({
+      search_query:            row.search_query,
+      search_query_volume:     row.search_query_volume,
+      purchases_total:         Number(row.purchases_total)  > 0 ? Number(row.purchases_total)  : null,
+      purchases_brand:         Number(row.purchases_brand)  > 0 ? Number(row.purchases_brand)  : null,
+      purchases_brand_share:   row.purchases_brand_share,
+      impressions_brand_share: row.impressions_brand_share,
+      clicks_brand_share:      row.clicks_brand_share,
+    }))
     .filter(r => (r.search_query_volume ?? 0) >= minVolume)
     .sort((a, b) => (b.search_query_volume ?? 0) - (a.search_query_volume ?? 0))
 }
