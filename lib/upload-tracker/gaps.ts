@@ -19,6 +19,17 @@ function addDays(isoDate: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Returns the start of the period whose end-anchor is anchorDate.
+// Weekly reports store the period's last day as the row anchor; the period runs
+// for 7 days ending on that date. Monthly reports store the end (or any day) of
+// the covered month; the period starts on the first of that month.
+// All other granularities treat the anchor itself as the period start.
+export function periodStart(anchorDate: string, granularity: string): string {
+  if (granularity === 'weekly') return addDays(anchorDate, -6);
+  if (granularity === 'monthly') return `${anchorDate.slice(0, 7)}-01`;
+  return anchorDate;
+}
+
 function inclusiveDays(start: string, end: string): number {
   const ms = new Date(end + 'T00:00:00Z').getTime() - new Date(start + 'T00:00:00Z').getTime();
   return Math.floor(ms / 86_400_000) + 1;

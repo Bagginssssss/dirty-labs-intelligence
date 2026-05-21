@@ -2,6 +2,8 @@ import { parseCSV } from '@/lib/csv-parser'
 import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
+import { periodStart } from '@/lib/upload-tracker/gaps'
 
 const BATCH_SIZE = 500
 
@@ -346,7 +348,12 @@ export async function POST(request: Request) {
 
     // Derive actual date coverage from resolved rows so the log entry is accurate
     // even when the operator leaves the date range form fields blank.
-    // Maps tables that use non-standard date columns; everything else uses report_date.
+    //
+    // date_range_end  = max of the primary date column(s) — always the latest period-end.
+    // date_range_start = cadence-aware: weekly reports store period-end anchors, so the
+    //   start is anchor - 6 days; monthly reports store any day in the month, so the start
+    //   is the first of that month. Delegates to periodStart() from gaps.ts so the same
+    //   period-bounds primitive is used here and in gap detection.
     const DATE_COL_OVERRIDES: Record<string, string[]> = {
       brand_analytics_customer_loyalty: ['period_end_date'],
       smartscout_subcategory_brands:    ['snapshot_date'],
@@ -360,8 +367,12 @@ export async function POST(request: Request) {
       .flatMap(r => dateCols.map(col => r[col]))
       .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
       .sort()
-    actualDateStart = allDates[0] ?? null
-    actualDateEnd   = allDates[allDates.length - 1] ?? null
+    if (allDates.length > 0) {
+      const registryEntry = REPORT_REGISTRY.find(e => e.internal_id === effectiveReportType)
+      const granularity = registryEntry?.granularity ?? 'daily'
+      actualDateStart = periodStart(allDates[0], granularity)
+      actualDateEnd   = allDates[allDates.length - 1]
+    }
 
     // 5. Insert in batches of 500 — never truncates.
     // Tables in UPSERT_CONFLICT_KEYS use upsert so re-uploads overwrite stale rows.
