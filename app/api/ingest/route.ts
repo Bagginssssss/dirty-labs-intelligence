@@ -257,6 +257,10 @@ export async function POST(request: Request) {
   let rowsReceived = 0
   let rowsStored = 0
   let rowsRejected = 0
+  let dateRangeStart = ''
+  let dateRangeEnd = ''
+  let actualDateStart: string | null = null
+  let actualDateEnd: string | null = null
   const ingestErrors: string[] = []
 
   try {
@@ -264,8 +268,8 @@ export async function POST(request: Request) {
     const file = formData.get('file') as File | null
     brandId = (formData.get('brand_id') as string) ?? ''
     const reportTypeOverride = (formData.get('report_type') as string) ?? ''
-    const dateRangeStart = (formData.get('date_range_start') as string) ?? ''
-    const dateRangeEnd = (formData.get('date_range_end') as string) ?? ''
+    dateRangeStart = (formData.get('date_range_start') as string) ?? ''
+    dateRangeEnd = (formData.get('date_range_end') as string) ?? ''
     const subcategoryField = (formData.get('subcategory') as string) || undefined
 
     if (!file) return Response.json({ error: 'No file provided' }, { status: 400 })
@@ -340,6 +344,25 @@ export async function POST(request: Request) {
     const { resolved, rejected: fkRejected } = await resolveRows(mappedRows, reportType, brandId)
     rowsRejected += fkRejected
 
+    // Derive actual date coverage from resolved rows so the log entry is accurate
+    // even when the operator leaves the date range form fields blank.
+    // Maps tables that use non-standard date columns; everything else uses report_date.
+    const DATE_COL_OVERRIDES: Record<string, string[]> = {
+      brand_analytics_customer_loyalty: ['period_end_date'],
+      smartscout_subcategory_brands:    ['snapshot_date'],
+      smartscout_subcategory_products:  ['snapshot_date'],
+      virtual_bundle_sales_snapshots:   ['snapshot_date'],
+      virtual_bundle_sales_daily:       ['sale_date'],
+      subscribe_and_save:               ['report_date', 'date_range_end'],
+    }
+    const dateCols = DATE_COL_OVERRIDES[tableName] ?? ['report_date']
+    const allDates = resolved
+      .flatMap(r => dateCols.map(col => r[col]))
+      .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort()
+    actualDateStart = allDates[0] ?? null
+    actualDateEnd   = allDates[allDates.length - 1] ?? null
+
     // 5. Insert in batches of 500 — never truncates.
     // Tables in UPSERT_CONFLICT_KEYS use upsert so re-uploads overwrite stale rows.
     // Each batch is deduplicated first to prevent within-batch conflict errors.
@@ -363,8 +386,8 @@ export async function POST(request: Request) {
       brand_id: brandId,
       report_type: effectiveReportType,
       source_platform: 'csv_upload',
-      date_range_start: dateRangeStart || null,
-      date_range_end: dateRangeEnd || null,
+      date_range_start: dateRangeStart || actualDateStart || null,
+      date_range_end:   dateRangeEnd   || actualDateEnd   || null,
       rows_received: rowsReceived,
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
@@ -399,6 +422,8 @@ export async function POST(request: Request) {
           brand_id: brandId,
           report_type: effectiveReportType,
           source_platform: 'csv_upload',
+          date_range_start: dateRangeStart || actualDateStart || null,
+          date_range_end:   dateRangeEnd   || actualDateEnd   || null,
           rows_received: rowsReceived,
           rows_stored: rowsStored,
           rows_rejected: rowsRejected,
