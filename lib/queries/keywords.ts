@@ -1,108 +1,85 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { fetchAll } from './fetch-all'
 import { SearchTermRow } from './types'
 import { HARVEST_READY_THRESHOLDS, HARVEST_INVESTIGATION_THRESHOLDS } from '@/lib/dashboard/thresholds'
 
-type RawSTR = {
-  campaign_id: string
-  customer_search_term: string | null
-  match_type: string | null
-  ad_type: string | null
-  spend: number
-  sales_7d: number
-  orders_7d: number
-  clicks: number
-  impressions: number
+// Shape returned by get_search_term_report_aggregated RPC.
+// Derived ratios (roas, acos, cvr) are computed in JS below.
+type RpcRow = {
+  search_term:   string
+  campaign_uuid: string
+  campaign_name: string | null
+  match_type:    string | null
+  ad_type:       string | null
+  spend:         number
+  sales:         number
+  orders:        number
+  clicks:        number
+  impressions:   number
 }
 
-type CampaignMeta = { id: string; campaign_name: string | null; ad_type: string | null; targeting_type: string | null }
+// Deduplicates concurrent identical calls within the same request (e.g. from
+// Promise.all in the chat loader). Keyed by brandId:startDate:endDate.
+const _searchTermInflight = new Map<string, Promise<SearchTermRow[]>>()
 
-async function fetchSearchTerms(
+function fetchSearchTerms(
   brandId: string,
   startDate: string,
-  endDate: string
-): Promise<{ rows: RawSTR[]; meta: Map<string, CampaignMeta> }> {
-  const [rows, metaRes] = await Promise.all([
-    fetchAll<RawSTR>(() =>
-      supabaseAdmin
-        .from('sp_search_term_report')
-        .select('campaign_id, customer_search_term, match_type, ad_type, spend, sales_7d, orders_7d, clicks, impressions')
-        .eq('brand_id', brandId)
-        .gte('report_date', startDate)
-        .lte('report_date', endDate)
-    ),
-    supabaseAdmin
-      .from('campaigns')
-      .select('id, campaign_name, ad_type, targeting_type')
-      .eq('brand_id', brandId),
-  ])
+  endDate: string,
+): Promise<SearchTermRow[]> {
+  const key = `${brandId}:${startDate}:${endDate}`
+  const inflight = _searchTermInflight.get(key)
+  if (inflight) return inflight
 
-  if (metaRes.error) throw new Error(`fetchCampaignMeta failed: ${metaRes.error.message}`)
-
-  const meta = new Map<string, CampaignMeta>()
-  for (const c of (metaRes.data ?? [])) {
-    meta.set(c.id, c as CampaignMeta)
-  }
-
-  return { rows, meta }
+  const promise = doFetchSearchTerms(brandId, startDate, endDate)
+  _searchTermInflight.set(key, promise)
+  promise.finally(() => _searchTermInflight.delete(key))
+  return promise
 }
 
-function aggregateByTerm(
-  rows: RawSTR[],
-  meta: Map<string, CampaignMeta>
-): SearchTermRow[] {
-  // Group by (customer_search_term, campaign_id)
-  const acc = new Map<string, SearchTermRow>()
+async function doFetchSearchTerms(
+  brandId: string,
+  startDate: string,
+  endDate: string,
+): Promise<SearchTermRow[]> {
+  const { data, error } = await supabaseAdmin.rpc(
+    'get_search_term_report_aggregated',
+    { p_brand_id: brandId, p_start_date: startDate, p_end_date: endDate },
+  )
+  if (error) throw new Error(`get_search_term_report_aggregated failed: ${error.message}`)
 
-  for (const row of rows) {
-    const term = row.customer_search_term ?? ''
-    const key  = `${term}::${row.campaign_id}`
-    const info = meta.get(row.campaign_id)
+  return ((data ?? []) as RpcRow[]).map(row => {
+    const spend       = Number(row.spend)       || 0
+    const sales       = Number(row.sales)       || 0
+    const orders      = Number(row.orders)      || 0
+    const clicks      = Number(row.clicks)      || 0
+    const impressions = Number(row.impressions) || 0
 
-    if (!acc.has(key)) {
-      acc.set(key, {
-        search_term:   term,
-        campaign_uuid: row.campaign_id,
-        campaign_name: info?.campaign_name ?? null,
-        match_type:    row.match_type ?? null,
-        ad_type:       info?.ad_type ?? row.ad_type ?? null,
-        spend:     0,
-        sales:     0,
-        orders:    0,
-        clicks:    0,
-        impressions: 0,
-        roas:  null,
-        acos:  null,
-        cvr:   null,
-      })
+    return {
+      search_term:   row.search_term,
+      campaign_uuid: row.campaign_uuid,
+      campaign_name: row.campaign_name,
+      match_type:    row.match_type,
+      ad_type:       row.ad_type,
+      spend,
+      sales,
+      orders,
+      clicks,
+      impressions,
+      roas:  spend  > 0 ? sales  / spend  : null,
+      acos:  sales  > 0 ? spend  / sales  : null,
+      cvr:   clicks > 0 ? orders / clicks : null,
     }
-
-    const agg = acc.get(key)!
-    agg.spend       += Number(row.spend) || 0
-    agg.sales       += Number(row.sales_7d) || 0
-    agg.orders      += Number(row.orders_7d) || 0
-    agg.clicks      += Number(row.clicks) || 0
-    agg.impressions += Number(row.impressions) || 0
-  }
-
-  for (const row of acc.values()) {
-    row.roas = row.spend > 0 ? row.sales / row.spend : null
-    row.acos = row.sales > 0 ? row.spend / row.sales : null
-    row.cvr  = row.clicks > 0 ? row.orders / row.clicks : null
-  }
-
-  return Array.from(acc.values())
+  })
 }
 
 export async function getTopSearchTerms(
   brandId: string,
   startDate: string,
   endDate: string,
-  limit = 20
+  limit = 20,
 ): Promise<SearchTermRow[]> {
-  const { rows, meta } = await fetchSearchTerms(brandId, startDate, endDate)
-  const terms = aggregateByTerm(rows, meta)
-  return terms.sort((a, b) => b.sales - a.sales).slice(0, limit)
+  const rows = await fetchSearchTerms(brandId, startDate, endDate)
+  return rows.sort((a, b) => b.sales - a.sales).slice(0, limit)
 }
 
 export async function getWasteSearchTerms(
@@ -110,11 +87,10 @@ export async function getWasteSearchTerms(
   startDate: string,
   endDate: string,
   minSpend = 20,
-  acosThreshold = 0.5
+  acosThreshold = 0.5,
 ): Promise<SearchTermRow[]> {
-  const { rows, meta } = await fetchSearchTerms(brandId, startDate, endDate)
-  const terms = aggregateByTerm(rows, meta)
-  return terms
+  const rows = await fetchSearchTerms(brandId, startDate, endDate)
+  return rows
     .filter(t => t.spend >= minSpend && (t.orders === 0 || (t.acos !== null && t.acos > acosThreshold)))
     .sort((a, b) => b.spend - a.spend)
 }
@@ -137,9 +113,8 @@ async function fetchAutoTerms(
   const autoCampaignIds = new Set((autoCampaigns ?? []).map(c => c.id))
   if (autoCampaignIds.size === 0) return []
 
-  const { rows, meta } = await fetchSearchTerms(brandId, startDate, endDate)
-  const autoRows = rows.filter(r => autoCampaignIds.has(r.campaign_id))
-  return aggregateByTerm(autoRows, meta)
+  const rows = await fetchSearchTerms(brandId, startDate, endDate)
+  return rows.filter(r => autoCampaignIds.has(r.campaign_uuid))
 }
 
 export async function getHarvestCandidates(
@@ -180,13 +155,12 @@ export async function getHarvestCandidatesTiered(
 export async function getSearchTermsByMatchType(
   brandId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
 ): Promise<Record<string, SearchTermRow[]>> {
-  const { rows, meta } = await fetchSearchTerms(brandId, startDate, endDate)
-  const terms = aggregateByTerm(rows, meta)
+  const rows = await fetchSearchTerms(brandId, startDate, endDate)
 
   const byType: Record<string, SearchTermRow[]> = {}
-  for (const term of terms) {
+  for (const term of rows) {
     const type = term.match_type ?? 'UNKNOWN'
     if (!byType[type]) byType[type] = []
     byType[type].push(term)
