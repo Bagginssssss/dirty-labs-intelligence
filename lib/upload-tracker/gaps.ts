@@ -134,10 +134,24 @@ function monthRangeFromYMs(startYM: string, endYM: string): GapRange {
 
 function findWeeklyCutover(sorted: string[]): number {
   const MONTHLY_THRESHOLD = 14;
+
+  // Fast path: no small gap anywhere → pure-monthly dataset.
+  // Return sorted.length so the caller treats all dates as the monthly section.
+  const hasSmallGap = sorted.some((_, i) => i > 0 && daysBetween(sorted[i - 1], sorted[i]) <= MONTHLY_THRESHOLD);
+  if (!hasSmallGap) return sorted.length;
+
+  // A large gap qualifies as the monthly→weekly boundary ONLY when the immediately
+  // following gap is also small.  This prevents a trailing monthly-aggregate row (e.g.
+  // a May 2026 monthly SQP row with projected report_date 2026-05-31 uploaded alongside
+  // weekly data) from displacing the cutover: such a row produces an isolated trailing
+  // large gap whose "next gap" is Infinity and therefore does NOT qualify.
   let lastLargeGapEnd = -1;
   for (let i = 1; i < sorted.length; i++) {
     if (daysBetween(sorted[i - 1], sorted[i]) > MONTHLY_THRESHOLD) {
-      lastLargeGapEnd = i;
+      const nextGap = i + 1 < sorted.length
+        ? daysBetween(sorted[i], sorted[i + 1])
+        : Infinity;
+      if (nextGap <= MONTHLY_THRESHOLD) lastLargeGapEnd = i;
     }
   }
   return lastLargeGapEnd + 1; // 0 if all weekly; first weekly date's index otherwise
@@ -226,7 +240,16 @@ export function detectGaps(
     return { withinWindow: [], historical: [], coverageStart: null, coverageEnd: null };
   }
 
-  const sorted = [...sourceDates].sort();
+  // Strip any dates past today.  Amazon occasionally stores a projected period-end
+  // (e.g. 2026-05-31 for an incomplete May monthly SQP export) as the report_date.
+  // Allowing a future date through would project coverageEnd forward and can disrupt
+  // the monthly→weekly cutover heuristic in findWeeklyCutover.
+  const today = new Date().toISOString().slice(0, 10);
+  const sorted = [...sourceDates].filter(d => d <= today).sort();
+  if (sorted.length === 0) {
+    return { withinWindow: [], historical: [], coverageStart: null, coverageEnd: null };
+  }
+
   const coverageStart = sorted[0];
   const coverageEnd = sorted[sorted.length - 1];
 
