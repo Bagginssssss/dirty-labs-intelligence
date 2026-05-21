@@ -1,5 +1,4 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { fetchAll } from './fetch-all'
 import { AnomalyItem } from './types'
 
 function ratio(n: number, d: number): number | null {
@@ -37,10 +36,10 @@ export async function getAnomalies(
   const priorEnd    = addDays(windowStart, -1)
   const priorStart  = addDays(priorEnd, -lookbackDays + 1)
 
-  type CampaignPerfRow = { campaign_id: string; spend: number; sales_7d: number; orders_7d: number }
+  type CampaignAggRow = { campaign_uuid: string; campaign_name: string | null; spend: number; sales: number; orders: number }
 
   // ── 1. Fetch current and prior period derived metrics ─────────────────────
-  const [curRes, priorRes, campaignRows, bizRes] = await Promise.all([
+  const [curRes, priorRes, campaignRpcRes, bizRes] = await Promise.all([
     supabaseAdmin
       .from('derived_metrics_daily')
       .select('total_ppc_spend, total_ppc_sales, total_revenue, total_orders, ntb_orders, total_clicks, metric_date')
@@ -53,14 +52,11 @@ export async function getAnomalies(
       .eq('brand_id', brandId)
       .gte('metric_date', priorStart)
       .lte('metric_date', priorEnd),
-    fetchAll<CampaignPerfRow>(() =>
-      supabaseAdmin
-        .from('sp_campaign_performance')
-        .select('campaign_id, spend, sales_7d, orders_7d')
-        .eq('brand_id', brandId)
-        .gte('report_date', windowStart)
-        .lte('report_date', windowEnd)
-    ).catch((): CampaignPerfRow[] => []),
+    supabaseAdmin.rpc('get_campaign_performance_aggregated', {
+      p_brand_id:   brandId,
+      p_start_date: windowStart,
+      p_end_date:   windowEnd,
+    }),
     supabaseAdmin
       .from('business_report')
       .select('asin_id, buy_box_pct, report_date')
@@ -68,6 +64,8 @@ export async function getAnomalies(
       .gte('report_date', windowStart)
       .lte('report_date', windowEnd),
   ])
+
+  const campaignRows = (campaignRpcRes.data ?? []) as CampaignAggRow[]
 
   const cur   = curRes.data   ?? []
   const prior = priorRes.data ?? []
@@ -181,53 +179,38 @@ export async function getAnomalies(
   }
 
   // ── Check 4: High ACOS campaigns ─────────────────────────────────────────
-  if (campaignRows.length > 0) {
-    const campAcc = new Map<string, { spend: number; sales: number; orders: number }>()
-    for (const row of campaignRows) {
-      const id = row.campaign_id
-      if (!campAcc.has(id)) campAcc.set(id, { spend: 0, sales: 0, orders: 0 })
-      const a = campAcc.get(id)!
-      a.spend  += Number(row.spend) || 0
-      a.sales  += Number(row.sales_7d) || 0
-      a.orders += Number(row.orders_7d) || 0
-    }
+  for (const row of campaignRows) {
+    const spend  = Number(row.spend)  || 0
+    const sales  = Number(row.sales)  || 0
+    const orders = Number(row.orders) || 0
+    const name   = row.campaign_name ?? row.campaign_uuid
 
-    const campaignMeta = await supabaseAdmin
-      .from('campaigns')
-      .select('id, campaign_name')
-      .eq('brand_id', brandId)
-      .in('id', Array.from(campAcc.keys()))
-
-    const nameMap = new Map((campaignMeta.data ?? []).map(c => [c.id, c.campaign_name]))
-
-    for (const [id, agg] of campAcc.entries()) {
-      // Check 4a: high ACOS (> 50%) with meaningful spend
-      if (agg.spend >= 50 && agg.sales > 0) {
-        const acos = agg.spend / agg.sales
-        if (acos > 0.5) {
-          anomalies.push({
-            type:          'high_acos_campaign',
-            severity:      acos > 1.0 ? 'critical' : 'warning',
-            entity:        nameMap.get(id) ?? id,
-            metric:        'acos',
-            current_value: acos,
-            expected_value: 0.3,
-            note:          `Campaign ACOS ${(acos * 100).toFixed(1)}% on $${agg.spend.toFixed(0)} spend`,
-          })
-        }
-      }
-
-      // Check 5: zero-sales campaigns with spend
-      if (agg.spend >= 50 && agg.orders === 0) {
+    // Check 4a: high ACOS (> 50%) with meaningful spend
+    if (spend >= 50 && sales > 0) {
+      const acos = spend / sales
+      if (acos > 0.5) {
         anomalies.push({
-          type:          'zero_sales_campaign',
-          severity:      agg.spend >= 200 ? 'critical' : 'warning',
-          entity:        nameMap.get(id) ?? id,
-          metric:        'orders',
-          current_value: 0,
-          note:          `Campaign spent $${agg.spend.toFixed(0)} with 0 orders in last ${lookbackDays} days`,
+          type:           'high_acos_campaign',
+          severity:       acos > 1.0 ? 'critical' : 'warning',
+          entity:         name,
+          metric:         'acos',
+          current_value:  acos,
+          expected_value: 0.3,
+          note:           `Campaign ACOS ${(acos * 100).toFixed(1)}% on $${spend.toFixed(0)} spend`,
         })
       }
+    }
+
+    // Check 5: zero-sales campaigns with spend
+    if (spend >= 50 && orders === 0) {
+      anomalies.push({
+        type:          'zero_sales_campaign',
+        severity:      spend >= 200 ? 'critical' : 'warning',
+        entity:        name,
+        metric:        'orders',
+        current_value: 0,
+        note:          `Campaign spent $${spend.toFixed(0)} with 0 orders in last ${lookbackDays} days`,
+      })
     }
   }
 
