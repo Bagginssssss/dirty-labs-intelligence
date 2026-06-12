@@ -1,4 +1,5 @@
-import { parseCSV } from '@/lib/csv-parser'
+import { parseCSV, decodeFileContent } from '@/lib/csv-parser'
+import { partitionRequiredNotNull } from '@/lib/ingest-validation'
 import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { supabaseAdmin } from '@/lib/supabase-admin'
@@ -277,8 +278,10 @@ export async function POST(request: Request) {
     if (!file) return Response.json({ error: 'No file provided' }, { status: 400 })
     if (!brandId) return Response.json({ error: 'brand_id is required' }, { status: 400 })
 
-    // 1. Parse — full file, no truncation
-    const content = await file.text()
+    // 1. Parse — full file, no truncation.
+    // decodeFileContent handles UTF-8 BOM (today's exports) and guards against a
+    // future UTF-16 export; plain UTF-8 falls through to file.text().
+    const content = await decodeFileContent(file)
     const parseResult = parseCSV(content)
     rowsReceived = parseResult.rowCount
     if (parseResult.errors.length) ingestErrors.push(...parseResult.errors.slice(0, 10))
@@ -346,7 +349,15 @@ export async function POST(request: Request) {
     const { resolved, rejected: fkRejected } = await resolveRows(mappedRows, reportType, brandId)
     rowsRejected += fkRejected
 
-    // Derive actual date coverage from resolved rows so the log entry is accurate
+    // 4b. Drop rows whose required NOT NULL columns are empty BEFORE they reach the
+    // database, counting each as exactly one reject (INB-117). Without this, a single
+    // SQP row with an empty Search Query maps to null, violates the NOT NULL constraint,
+    // and fails its whole ~500-row upsert batch — losing every good row alongside it.
+    const { kept, rejected: requiredRejects } = partitionRequiredNotNull(resolved, tableName)
+    rowsRejected += requiredRejects.length
+    for (const rej of requiredRejects.slice(0, 10)) ingestErrors.push(rej.reason)
+
+    // Derive actual date coverage from stored rows so the log entry is accurate
     // even when the operator leaves the date range form fields blank.
     //
     // date_range_end  = max of the primary date column(s) — always the latest period-end.
@@ -363,7 +374,7 @@ export async function POST(request: Request) {
       subscribe_and_save:               ['report_date', 'date_range_end'],
     }
     const dateCols = DATE_COL_OVERRIDES[tableName] ?? ['report_date']
-    const allDates = resolved
+    const allDates = kept
       .flatMap(r => dateCols.map(col => r[col]))
       .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
       .sort()
@@ -377,18 +388,36 @@ export async function POST(request: Request) {
     // 5. Insert in batches of 500 — never truncates.
     // Tables in UPSERT_CONFLICT_KEYS use upsert so re-uploads overwrite stale rows.
     // Each batch is deduplicated first to prevent within-batch conflict errors.
+    // If a batch statement fails (e.g. one unexpected constraint violation), we
+    // fall back to inserting that batch row-by-row so a single bad row can never
+    // discard the rest of the batch (INB-117). Defence-in-depth alongside the
+    // step-4b filter: that catches the known empty-required-field case up front;
+    // this catches anything else the database rejects.
     const conflictKey = UPSERT_CONFLICT_KEYS[tableName]
-    for (let i = 0; i < resolved.length; i += BATCH_SIZE) {
-      const raw = resolved.slice(i, i + BATCH_SIZE)
+    const writeRows = (rows: Record<string, unknown>[]) =>
+      conflictKey
+        ? supabaseAdmin.from(tableName).upsert(rows, { onConflict: conflictKey })
+        : supabaseAdmin.from(tableName).insert(rows)
+
+    for (let i = 0; i < kept.length; i += BATCH_SIZE) {
+      const raw = kept.slice(i, i + BATCH_SIZE)
       const batch = conflictKey ? deduplicateBatch(raw, conflictKey) : raw
-      const { error } = conflictKey
-        ? await supabaseAdmin.from(tableName).upsert(batch, { onConflict: conflictKey })
-        : await supabaseAdmin.from(tableName).insert(batch)
-      if (error) {
-        rowsRejected += batch.length
-        ingestErrors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${error.message}`)
-      } else {
+      const { error } = await writeRows(batch)
+      if (!error) {
         rowsStored += batch.length
+        continue
+      }
+
+      // Batch failed — retry each row individually so good rows still land.
+      ingestErrors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1} failed, retrying row-by-row: ${error.message}`)
+      for (const row of batch) {
+        const { error: rowError } = await writeRows([row])
+        if (rowError) {
+          rowsRejected++
+          if (ingestErrors.length < 20) ingestErrors.push(`Row rejected: ${rowError.message}`)
+        } else {
+          rowsStored++
+        }
       }
     }
 
