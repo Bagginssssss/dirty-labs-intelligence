@@ -260,6 +260,7 @@ export async function POST(request: Request) {
   let rowsReceived = 0
   let rowsStored = 0
   let rowsRejected = 0
+  let rowsDeduplicated = 0
   let dateRangeStart = ''
   let dateRangeEnd = ''
   let actualDateStart: string | null = null
@@ -402,6 +403,11 @@ export async function POST(request: Request) {
     for (let i = 0; i < kept.length; i += BATCH_SIZE) {
       const raw = kept.slice(i, i + BATCH_SIZE)
       const batch = conflictKey ? deduplicateBatch(raw, conflictKey) : raw
+      // Count rows the within-batch dedup collapsed, so silent overwrites are
+      // visible in the response instead of vanishing between received and stored
+      // (INB-108). For business_report this is now 0 — grouping replaces the
+      // collapse — but the visibility matters for every report type.
+      rowsDeduplicated += raw.length - batch.length
       const { error } = await writeRows(batch)
       if (!error) {
         rowsStored += batch.length
@@ -448,6 +454,7 @@ export async function POST(request: Request) {
       rows_received: rowsReceived,
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
+      rows_deduplicated: rowsDeduplicated,
       parse_errors: ingestErrors,
       ...(granularityDetected ? { granularity_detected: granularityDetected } : {}),
     })

@@ -2,7 +2,7 @@ import { RawRow, MappedRow, MapperContext } from './types'
 import { mapSpSearchTerm } from './sp-search-term'
 import { mapSpTargeting } from './sp-targeting'
 import { mapSpCampaignPerformance } from './sp-campaign-performance'
-import { mapBusinessReport } from './business-report'
+import { mapBusinessReportBatch } from './business-report'
 import { mapBusinessReportDaily } from './business-report-daily'
 import { mapPurchasedProduct } from './purchased-product'
 import { mapScaleInsightsBidLog } from './scale-insights-bid-log'
@@ -29,7 +29,6 @@ const MAPPERS: Record<string, MapperFn> = {
   sp_search_term_report:       mapSpSearchTerm,
   sp_targeting_report:         mapSpTargeting,
   sp_campaign_performance:     mapSpCampaignPerformance,
-  business_report:             mapBusinessReport,
   business_report_daily:       mapBusinessReportDaily,
   purchased_product_report:    mapPurchasedProduct,
   scale_insights_bid_log:      mapScaleInsightsBidLog,
@@ -44,6 +43,8 @@ const MAPPERS: Record<string, MapperFn> = {
 }
 
 const BATCH_MAPPERS: Record<string, BatchMapperFn> = {
+  // business_report groups multi-SKU rows per child ASIN before insert (INB-108).
+  business_report:                       mapBusinessReportBatch,
   smartscout_subcategory_products:       mapSmartscoutSubcategoryProducts,
   virtual_bundle_sales_snapshots:        mapVirtualBundleSnapshots,
   brand_analytics_customer_loyalty:      mapBrandAnalyticsCustomerLoyalty,
