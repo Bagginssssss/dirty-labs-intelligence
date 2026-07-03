@@ -121,3 +121,76 @@ by app/api/analyze/route.ts on first analysis run — DO NOT call manually.
 Project: Dirty Labs PPC Intelligence Platform
 Current milestone: Milestone 2 — Intelligence Layer
 Remaining: INB-10 (dashboard), INB-11 (chat), INB-15 (data quality)
+
+## Quality Control & Verification Protocol
+
+**Governing principle:** No change is "done" because the summary says so. It's done when
+an independent path confirms it — a fail-first test, a reviewed diff, and (for data/DB work)
+an out-of-band check. Claude self-verifies as far as possible on every task; a defined set
+of cases stop for human QC.
+
+### Definition of Done (every ticket)
+ALL must be true:
+- Acceptance criteria from the goal brief are met.
+- A regression test exists that FAILS on pre-change code and PASSES after — both states shown.
+- Full suite green (`npm test`) and `tsc --noEmit` clean.
+- The actual diff has been reported, not just a prose summary.
+- Any "Human QC required" case has been flagged, not silently assumed.
+- A QC note is posted to the Linear ticket (format below).
+
+### Test discipline (the default — autonomous)
+- Every behavioral change gets a test. No behavioral change ships untested.
+- **Fail-first rule (non-negotiable):** write the test, run it against current code and show it
+  FAILING, then implement the fix and show it PASSING. A test green both before and after the
+  change proves nothing and is not acceptable evidence.
+- Run the full suite + typecheck before declaring done; paste the transcript.
+- Never weaken, skip, or delete a test to get green. If an existing test must change, stop and
+  explain why first.
+- Favor targeted "success tests" that assert the specific corrected behavior, alongside the
+  failing case that motivated the fix.
+
+### Honest reporting
+- Show the diff. The prose summary is an index, never the evidence.
+- Call out anything changed beyond the ticket's stated scope.
+- State plainly what you could NOT verify. Never imply coverage you don't have.
+- Distinguish "tests pass" (logic internally consistent) from "verified in the real system"
+  (confirmed against live data). Only the latter is proof for data-affecting work.
+
+### Human QC required — STOP and hand off
+Implement and self-test as far as possible, then pause and hand Darren a concrete checklist when
+the change:
+- Can only be validated with a real report upload / live data (ingest correctness for a report
+  type, derived-metrics recalc after upload, anything whose test needs data not in fixtures).
+- Is UI-visible (dashboard labels, panels, rails) — needs a visual check at localhost:3000.
+- Touches DB schema, migrations, unique constraints, or any destructive operation.
+- Moves business-critical numbers (hero-ASIN units/sales, revenue, ACOS, NTB, KPI rails).
+- Involved a low-confidence judgment call or an ambiguous spec.
+
+The hand-off states: what to look at, what "correct" looks like, and what data to load to see it.
+Do not mark the ticket done — mark it "pending human QC."
+
+### Independent verification (out-of-band)
+For data- or DB-touching changes, the test alone is not proof. Produce the specific Supabase
+query or spot-check that re-derives the result through a different path than the code under test
+(e.g., after an ingest fix, the query that reads stored rows back and checks the totals). Run by
+the chat-side reviewer or Darren before close.
+
+### Data-integrity canary (the "nothing broke silently" check)
+Surface these whenever a change could affect ingest or metrics:
+- Hero-ASIN units/sales match source for a spot-checked ASIN.
+- Per-period row counts are as expected (no silent halving/collapse).
+- No NULLs in required columns; no unexpected duplicates on natural keys.
+
+### QC note (post to the Linear ticket on completion)
+- Commit SHA + branch
+- Files changed
+- What the fail→pass test proves (one line)
+- Human-QC items flagged (or "none")
+- Independent verification run + result (or "pending")
+- Build/deploy status
+
+### Git & autonomy guardrails
+- One ticket = one branch off fresh `main` (`darren/inb-<n>-<slug>`) = one focused commit = one push.
+- Pre-approved without asking: `npm test`, `npm run build`, lint, `tsc --noEmit`.
+- Require explicit human go-ahead: DB migrations / schema changes, destructive git ops, every `git push`.
+- Never commit secrets; `.env.local` stays gitignored.
