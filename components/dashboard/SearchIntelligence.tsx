@@ -10,7 +10,7 @@ export function SearchIntelligence({ data }: { data: SearchIntelData }) {
       </h3>
 
       <div className="text-[8px] tracking-[0.1em] text-[#3b82f6] mt-[7px] mb-[4px]">
-        TOP BRAND QUERIES — purchase share
+        TOP BRAND QUERIES — purchase share · searches/mo
       </div>
       {data.brandQueries.length === 0 ? (
         <div className="text-[9px] text-[#475569] italic">No SQP data.</div>
@@ -19,7 +19,7 @@ export function SearchIntelligence({ data }: { data: SearchIntelData }) {
       )}
 
       <div className="text-[8px] tracking-[0.1em] text-[#3b82f6] mt-[7px] mb-[4px] flex items-center gap-[6px]">
-        SHARE GAPS — high volume · low brand share
+        SHARE GAPS — high volume · low brand share · searches/mo
         <span className="text-[7px] px-1 py-[1px] rounded-[2px] bg-[#1e1e2e] text-[#475569] tracking-normal">
           NTB opportunity
         </span>
@@ -41,10 +41,10 @@ export function SearchIntelligence({ data }: { data: SearchIntelData }) {
 function SQPRowItem({ row, tone, sharePrecision = 1 }: { row: SQPRow; tone: 'positive' | 'critical'; sharePrecision?: number }) {
   const shareTone = tone === 'positive' ? 'text-[#10b981]' : 'text-[#ef4444]';
   return (
-    <div className="flex justify-between py-[3px] border-b border-[#1e1e2e]/30">
+    <div className="flex justify-between gap-[6px] py-[3px] border-b border-[#1e1e2e]/30">
       <span className="text-[9px] text-[#94a3b8] flex-1 truncate">{row.query}</span>
       <span className={`text-[9px] font-medium min-w-[36px] text-right ${shareTone}`}>{fmtPct(row.purchaseShare, sharePrecision)}</span>
-      <span className="text-[8px] text-[#475569] min-w-[55px] text-right">{fmtIntCompact(row.searchVolume)}/mo</span>
+      <span className="text-[8px] text-[#475569] min-w-[40px] text-right">{fmtIntCompact(row.searchVolume)}</span>
     </div>
   );
 }
