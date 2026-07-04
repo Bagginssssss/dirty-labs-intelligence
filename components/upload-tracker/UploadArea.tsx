@@ -14,6 +14,7 @@ interface IngestResult {
   rows_received?: number
   rows_stored?: number
   rows_rejected?: number
+  rows_deduplicated?: number
   parse_errors?: string[]
   error?: string
   granularity_detected?: string
@@ -255,20 +256,48 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
                 />
               )}
               <ResultRow label="Target table" value={result.table ?? '—'} />
-              <ResultRow label="Rows received" value={String(result.rows_received ?? 0)} />
+              {/* Four labeled facts (INB-91). Deliberately NOT presented as an
+                  equation: some mappers expand one CSV row into many stored rows,
+                  so received − deduped − rejected ≠ stored in general. The
+                  persisted counter model lives in INB-68. The visible caption
+                  below the list is the primary explanation of the received↔stored
+                  gap; the title tooltips are supplementary only. */}
+              <ResultRow
+                label="Rows received"
+                value={String(result.rows_received ?? 0)}
+                title="Data rows parsed from the uploaded CSV."
+              />
+              {(result.rows_deduplicated ?? 0) > 0 && (
+                <ResultRow
+                  label="Within-batch deduped"
+                  value={String(result.rows_deduplicated)}
+                  title="Rows collapsed before storage because they share the table's natural key within this upload (last occurrence wins). Expected for Amazon/SmartScout exports — not an error, distinct from rejection."
+                />
+              )}
+              {(result.rows_rejected ?? 0) > 0 && (
+                <ResultRow
+                  label="Validation rejected"
+                  value={String(result.rows_rejected)}
+                  highlight="red"
+                  title="Rows that failed validation or FK resolution and were NOT stored — unlike deduped rows, these represent lost data; see Errors below."
+                />
+              )}
               <ResultRow
                 label="Rows stored"
                 value={String(result.rows_stored ?? 0)}
                 highlight={success && !partial ? 'green' : undefined}
+                title="Rows written to the database. May be lower than received (within-batch dedup) or higher (some reports expand one CSV row into many, e.g. keyword-rank date columns) — a gap in either direction is normal."
               />
-              {(result.rows_rejected ?? 0) > 0 && (
-                <ResultRow
-                  label="Rows rejected"
-                  value={String(result.rows_rejected)}
-                  highlight="red"
-                />
-              )}
             </dl>
+          )}
+
+          {!result.error && (
+            <p className="text-[9px] text-[#64748b] mt-3 leading-relaxed">
+              Received and stored counts often differ — some reports collapse duplicate or variation
+              rows during processing, others expand one row into several. A difference in either
+              direction is expected; only <span className="text-[#ef4444]">Validation rejected</span>{' '}
+              means rows failed and were lost.
+            </p>
           )}
 
           {result.parse_errors && result.parse_errors.length > 0 && (
@@ -289,13 +318,15 @@ function ResultRow({
   label,
   value,
   highlight,
+  title,
 }: {
   label: string
   value: string
   highlight?: 'green' | 'red'
+  title?: string
 }) {
   return (
-    <div className="flex justify-between">
+    <div className="flex justify-between" title={title}>
       <dt className="text-[#64748b]">{label}</dt>
       <dd
         style={{
