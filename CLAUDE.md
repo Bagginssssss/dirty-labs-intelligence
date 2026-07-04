@@ -42,15 +42,27 @@ WRONG: revenue / orders_7d from campaign data
 rank_value = 98 means "97+" — display as "97+" never as 98
 
 ### Upsert Tables
-These tables use upsert not insert — conflict keys matter:
-- business_report: (brand_id, asin_id, report_date)
-- sp_campaign_performance: (brand_id, campaign_id, report_date, ad_type)
-- subscribe_and_save: (brand_id, asin_id, sku, report_date)
-- search_query_performance: (brand_id, search_query, report_date)
-- scale_insights_keyword_rank: (brand_id, asin_id, keyword, report_date)
-- scale_insights_bid_log: (brand_id, campaign_id, target, change_timestamp, bid_before, bid_after)
-- smartscout_subcategory_products: (brand_id, parent_asin, subcategory, snapshot_date)
-- smartscout_subcategory_brands: (brand_id, brand_name, snapshot_date)
+Source of truth: lib/upsert-config.ts (UPSERT_CONFLICT_KEYS for the ingest route,
+ALL_UPSERT_CONFLICT_KEYS adds keys hardcoded at non-ingest call sites). Do not
+enumerate the keys elsewhere — earlier copies of this list drifted (INB-88 found
+this section missing 10 tables and stating a wrong key for smartscout_subcategory_brands).
+
+Every configured conflict key MUST have a matching UNIQUE constraint in the DB.
+A key without its constraint means ON CONFLICT catches nothing and re-uploads
+silently duplicate rows (INB-82: purchased_product_report reached 1,031 dupes).
+Detection (INB-88): tests/upsert-constraint-check.test.ts (suite fails),
+`npm run check:upsert` (live DB, exit 1 on violations), and /api/health
+(`upsert_constraint_check` + `degraded: true` — always HTTP 200; the suite and
+script are the enforcing surfaces).
+
+#### Adding a new ingestion table — checklist (MANDATORY)
+1. The table's migration MUST include the UNIQUE constraint matching the upsert
+   conflict key (see migration 030 for the pattern).
+2. Add the key to UPSERT_CONFLICT_KEYS in lib/upsert-config.ts (or
+   ALL_UPSERT_CONFLICT_KEYS if upserted outside the ingest route).
+3. Update the aligned-DB fixture in tests/upsert-constraint-check.test.ts —
+   the suite fails until the fixture matches the config.
+4. After applying the migration, run `npm run check:upsert` and confirm all-clear.
 
 ## File Structure
 ```

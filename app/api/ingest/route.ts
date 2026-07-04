@@ -5,6 +5,7 @@ import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
 import { periodStart } from '@/lib/upload-tracker/gaps'
+import { UPSERT_CONFLICT_KEYS } from '@/lib/upsert-config'
 
 const BATCH_SIZE = 500
 
@@ -23,31 +24,6 @@ function deduplicateBatch(
     seen.set(key, row)
   }
   return Array.from(seen.values())
-}
-
-// Tables that use upsert instead of insert, keyed by their natural-key columns.
-// When a conflict occurs the incoming row overwrites the stored one so re-uploads
-// and overlapping date ranges always reflect the most recently ingested values.
-const UPSERT_CONFLICT_KEYS: Record<string, string> = {
-  scale_insights_keyword_rank: 'brand_id,asin_id,keyword,report_date',
-  scale_insights_bid_log:      'brand_id,campaign_id,target,change_timestamp,bid_before,bid_after',
-  business_report:             'brand_id,asin_id,report_date',
-  business_report_daily:       'brand_id,report_date',
-  sp_campaign_performance:     'brand_id,campaign_id,report_date,ad_type',
-  // Rolling-pull tables — constraint added in migration 030 (INB-82)
-  sp_search_term_report:       'brand_id,campaign_id,ad_group_id,report_date,customer_search_term,targeting',
-  sp_targeting_report:         'brand_id,campaign_id,ad_group_id,report_date,targeting,match_type',
-  purchased_product_report:    'brand_id,campaign_id,report_date,advertised_asin,purchased_asin',
-  derived_metrics_daily:       'brand_id,metric_date',
-  derived_metrics_weekly:      'brand_id,week_start',
-  subscribe_and_save:              'brand_id,asin_id,sku,report_date',
-  search_query_performance:        'brand_id,search_query,report_date',
-  smartscout_subcategory_products: 'brand_id,parent_asin,subcategory,snapshot_date',
-  smartscout_subcategory_brands:   'brand_id,brand_name,subcategory,snapshot_date',
-  virtual_bundle_sales:                 'brand_id,bundle_asin,sale_date',
-  virtual_bundle_sales_daily:           'brand_id,bundle_asin,sale_date',
-  virtual_bundle_sales_snapshots:       'brand_id,bundle_asin,snapshot_date',
-  brand_analytics_customer_loyalty:     'brand_id,period_end_date,granularity',
 }
 
 // ─── FK resolution helpers ────────────────────────────────────────────────────

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/test-register.mjs --test \"tests/**/*.test.ts\"",
+    "check:upsert": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/test-register.mjs scripts/check-upsert-constraints.mjs",
     "backfill": "node scripts/backfill-ingest.mjs"
   },
   "dependencies": {
