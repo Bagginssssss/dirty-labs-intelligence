@@ -11,6 +11,10 @@ export type ReportRegistryEntry = {
   notes?: string;
   /** Filters source-table queries to a subset of rows (e.g. a specific ad_type). Applied via .in(). */
   source_filter?: { column: string; values: string[] };
+  /** The source CSV carries no usable per-row date — the row date comes from the upload
+   *  form's date_range_start/end, so /api/ingest rejects uploads of this type without
+   *  them and /upload marks the fields required (INB-109). */
+  requires_period_dates?: true;
   /** Old internal_id values that map to this entry in report_ingestion_log. Upload history merges events from all IDs. */
   legacy_report_ids?: string[];
 };
@@ -93,6 +97,7 @@ export const REPORT_REGISTRY: ReportRegistryEntry[] = [
     pull_window_days: 30,
     granularity: 'monthly',
     display_order: 50,
+    requires_period_dates: true,
     notes: 'Cadence: pulled weekly. Granularity: one row per month per ASIN (monthly aggregates). "(Monthly)" in display name refers to data granularity, not cadence. Populated alongside business_report_daily from a single upload action (per INB-38 hybrid arch); same ingested_at expected. 30d pull window covers returns/refund reconciliation.',
   },
   {
@@ -195,6 +200,7 @@ export const REPORT_REGISTRY: ReportRegistryEntry[] = [
     pull_window_days: 'snapshot',
     granularity: 'monthly',
     display_order: 130,
+    requires_period_dates: true,
     notes: 'REQUIRES per-category designation at upload: Dishwasher / Laundry / Stain Remover. Cadence is monthly or ad hoc — no overdue flag until approaching 30 days.',
   },
   {
@@ -207,6 +213,7 @@ export const REPORT_REGISTRY: ReportRegistryEntry[] = [
     pull_window_days: 'snapshot',
     granularity: 'monthly',
     display_order: 140,
+    requires_period_dates: true,
     notes: 'Cadence is monthly or ad hoc — no overdue flag until approaching 30 days.',
   },
 

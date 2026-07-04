@@ -1,5 +1,5 @@
 import { parseCSV, decodeFileContent } from '@/lib/csv-parser'
-import { partitionRequiredNotNull } from '@/lib/ingest-validation'
+import { partitionRequiredNotNull, periodDatesError } from '@/lib/ingest-validation'
 import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { supabaseAdmin } from '@/lib/supabase-admin'
@@ -314,6 +314,15 @@ export async function POST(request: Request) {
         { error: 'Subcategory required for Subcategory Brands reports. Select one before uploading.' },
         { status: 400 }
       )
+    }
+
+    // INB-109: period-aggregate types stamp every row's date from the form's date
+    // range. Without it, business_report maps report_date = null (the NOT NULL
+    // constraint then rejects the entire upload) and the SmartScout snapshot types
+    // silently stamp a wrong date — so reject up front, before any DB access.
+    const periodError = periodDatesError(reportType, dateRangeStart, dateRangeEnd)
+    if (periodError) {
+      return Response.json({ error: periodError }, { status: 400 })
     }
 
     // 3. Map rows

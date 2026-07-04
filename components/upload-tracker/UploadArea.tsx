@@ -3,6 +3,9 @@
 import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { refreshTrackerCache } from '@/app/upload/actions'
+import { parseCSV, decodeFileContent } from '@/lib/csv-parser'
+import { detectReportType } from '@/lib/report-detector'
+import { requiresPeriodDates } from '@/lib/ingest-validation'
 
 interface IngestResult {
   status: string
@@ -23,10 +26,31 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
   const [dateEnd, setDateEnd] = useState('')
   const [subcategory, setSubcategory] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [detectedType, setDetectedType] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<IngestResult | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // INB-109: period-aggregate types (business_report, SmartScout snapshots) carry
+  // no row dates in the CSV — the form's date range stamps every row, so those
+  // fields become required. Detection reuses the exact server pipeline on just the
+  // header region of the file; if it's inconclusive the fields stay optional and
+  // the /api/ingest gate remains authoritative.
+  async function selectFile(f: File | null) {
+    setFile(f)
+    setDetectedType(null)
+    if (!f) return
+    try {
+      const content = await decodeFileContent(f.slice(0, 64 * 1024))
+      setDetectedType(detectReportType(parseCSV(content).headers).reportType)
+    } catch {
+      // Unreadable header region — leave fields optional; the server still gates.
+    }
+  }
+
+  const datesRequired = detectedType !== null && requiresPeriodDates(detectedType)
+  const datesMissing = datesRequired && (!dateStart || !dateEnd)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -42,12 +66,13 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
     e.preventDefault()
     setIsDragging(false)
     const dropped = e.dataTransfer.files?.[0]
-    if (dropped) setFile(dropped)
+    if (dropped) void selectFile(dropped)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!file || !brandId) return
+    if (!file || !brandId || datesMissing) return
 
     setLoading(true)
     setResult(null)
@@ -102,26 +127,35 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
           <div>
             <label className="block text-[9px] text-[#64748b] mb-1 tracking-[0.08em] uppercase">
               Date Range Start
+              {datesRequired && <span className="text-[#ef4444]"> *</span>}
             </label>
             <input
               type="date"
               value={dateStart}
               onChange={e => setDateStart(e.target.value)}
+              required={datesRequired}
               className="w-full bg-[#111113] border border-[#1e1e2e] rounded-[3px] px-3 py-1.5 text-[11px] text-[#e2e8f0] font-mono focus:outline-none focus:border-[#3b82f6]"
             />
           </div>
           <div>
             <label className="block text-[9px] text-[#64748b] mb-1 tracking-[0.08em] uppercase">
               Date Range End
+              {datesRequired && <span className="text-[#ef4444]"> *</span>}
             </label>
             <input
               type="date"
               value={dateEnd}
               onChange={e => setDateEnd(e.target.value)}
+              required={datesRequired}
               className="w-full bg-[#111113] border border-[#1e1e2e] rounded-[3px] px-3 py-1.5 text-[11px] text-[#e2e8f0] font-mono focus:outline-none focus:border-[#3b82f6]"
             />
           </div>
         </div>
+        {datesRequired && (
+          <p className="text-[9px] text-[#f59e0b] -mt-2">
+            This report is period-aggregate — enter the period start/end you selected in the source UI.
+          </p>
+        )}
 
         {/* Subcategory — required for SmartScout Subcategory Brands reports */}
         <div>
@@ -172,14 +206,14 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
             type="file"
             accept=".csv"
             className="hidden"
-            onChange={e => setFile(e.target.files?.[0] ?? null)}
+            onChange={e => void selectFile(e.target.files?.[0] ?? null)}
           />
         </div>
 
         {/* Submit */}
         <button
           type="submit"
-          disabled={loading || !file || !brandId}
+          disabled={loading || !file || !brandId || datesMissing}
           className="w-full bg-[#3b82f6] text-[#0f0f0f] rounded-[3px] py-2 text-[11px] font-medium tracking-[0.06em] disabled:opacity-40 hover:bg-[#60a5fa] transition-colors"
         >
           {loading ? 'UPLOADING…' : 'UPLOAD & INGEST'}
