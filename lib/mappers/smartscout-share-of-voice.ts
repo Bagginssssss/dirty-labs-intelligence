@@ -1,4 +1,5 @@
-import { MappedRow, RawRow, makeGetter, parseDate, parseInteger, parseNumeric } from './types'
+import type { MappedRow, RawRow } from './types'
+import { makeGetter, parseDate, parseInteger, parseNumeric } from './types'
 
 export interface SmartscoutShareOfVoiceRow extends MappedRow {
   report_date: string | null

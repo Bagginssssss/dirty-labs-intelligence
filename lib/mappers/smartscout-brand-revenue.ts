@@ -1,4 +1,5 @@
-import { MappedRow, RawRow, makeGetter, parseDate, parseNumeric } from './types'
+import type { MappedRow, RawRow } from './types'
+import { makeGetter, parseDate, parseNumeric } from './types'
 
 export interface SmartscoutBrandRevenueRow extends MappedRow {
   report_date: string | null

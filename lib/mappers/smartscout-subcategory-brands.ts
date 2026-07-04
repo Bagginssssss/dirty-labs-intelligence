@@ -1,4 +1,5 @@
-import { MappedRow, RawRow, MapperContext, makeGetter, parseNumeric, normalizeSmartscoutSubcategory } from './types'
+import type { MappedRow, RawRow, MapperContext } from './types'
+import { makeGetter, parseNumeric, normalizeSmartscoutSubcategory } from './types'
 
 export interface SmartscoutSubcategoryBrandsRow extends MappedRow {
   snapshot_date: string | null

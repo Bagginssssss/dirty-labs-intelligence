@@ -1,4 +1,4 @@
-import { ReportRegistryEntry } from './registry';
+import type { ReportRegistryEntry } from './registry';
 
 export type GapRange = {
   start: string;

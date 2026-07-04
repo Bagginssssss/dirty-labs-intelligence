@@ -1,4 +1,5 @@
-import { MappedRow, RawRow, MapperContext, makeGetter, parseDate, parseInteger, parseNumeric } from './types'
+import type { MappedRow, RawRow, MapperContext } from './types'
+import { makeGetter, parseDate, parseInteger, parseNumeric } from './types'
 
 export interface BrandAnalyticsCustomerLoyaltyRow extends MappedRow {
   period_end_date: string | null

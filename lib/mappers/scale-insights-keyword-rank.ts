@@ -1,4 +1,5 @@
-import { MappedRow, RawRow, makeGetter, parseInteger, parseNumeric } from './types'
+import type { MappedRow, RawRow } from './types'
+import { makeGetter, parseInteger, parseNumeric } from './types'
 
 // Raw header format for date columns before normalization.
 const DATE_COL_RE = /^\d{4}-\d{2}-\d{2}$/

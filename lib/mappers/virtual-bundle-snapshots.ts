@@ -1,4 +1,5 @@
-import { MappedRow, RawRow, MapperContext, parseNumeric } from './types'
+import type { MappedRow, RawRow, MapperContext } from './types'
+import { parseNumeric } from './types'
 
 // Matches: "Week 83 Report (2025-04-29 through 2025-07-28)"
 const SECTION_RE = /^Week (\d+) Report \((\d{4}-\d{2}-\d{2}) through (\d{4}-\d{2}-\d{2})\)/i

@@ -1,4 +1,4 @@
-import { RawRow, MappedRow, MapperContext } from './types'
+import type { RawRow, MappedRow, MapperContext } from './types'
 import { mapSpSearchTerm } from './sp-search-term'
 import { mapSpTargeting } from './sp-targeting'
 import { mapSpCampaignPerformance } from './sp-campaign-performance'

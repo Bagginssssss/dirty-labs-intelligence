@@ -1,4 +1,5 @@
-import { MappedRow, MapperContext, RawRow, makeGetter, parseDate, parseInteger, parseNumeric } from './types'
+import type { MappedRow, MapperContext, RawRow } from './types'
+import { makeGetter, parseDate, parseInteger, parseNumeric } from './types'
 
 export function mapVirtualBundleDaily(
   row: RawRow,

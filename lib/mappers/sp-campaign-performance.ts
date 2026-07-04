@@ -1,4 +1,5 @@
-import { MappedRow, RawRow, makeGetter, parseDate, parseInteger, parseNumeric } from './types'
+import type { MappedRow, RawRow } from './types'
+import { makeGetter, parseDate, parseInteger, parseNumeric } from './types'
 
 export interface SpCampaignPerformanceRow extends MappedRow {
   _campaign_amazon_id: string

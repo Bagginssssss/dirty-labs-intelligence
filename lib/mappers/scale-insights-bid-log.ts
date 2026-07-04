@@ -1,4 +1,5 @@
-import { MappedRow, RawRow, makeGetter, parseNumeric } from './types'
+import type { MappedRow, RawRow } from './types'
+import { makeGetter, parseNumeric } from './types'
 
 export interface ScaleInsightsBidLogRow extends MappedRow {
   _campaign_amazon_id: string

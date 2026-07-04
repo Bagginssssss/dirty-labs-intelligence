@@ -17,6 +17,14 @@ function addExtension(absPath) {
   for (const ext of ['.ts', '.tsx', '.mts', '.js', '.mjs']) {
     if (fs.existsSync(absPath + ext)) return absPath + ext
   }
+  // Directory import (e.g. `@/lib/mappers`) — resolve to its index file, as
+  // the bundler would.
+  if (fs.existsSync(absPath) && fs.statSync(absPath).isDirectory()) {
+    for (const ext of ['.ts', '.tsx', '.mts', '.js', '.mjs']) {
+      const idx = path.join(absPath, 'index' + ext)
+      if (fs.existsSync(idx)) return idx
+    }
+  }
   return absPath
 }
 
