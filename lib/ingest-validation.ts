@@ -62,6 +62,37 @@ export function partitionRequiredNotNull(
 }
 
 // ---------------------------------------------------------------------------
+// Upload-wide dedup (INB-68)
+//
+// Collapses rows sharing the same upsert natural key across the ENTIRE upload,
+// last occurrence wins — identical to what the DB's upsert overwrite would
+// produce, but counted honestly. (The predecessor, the route's per-500-row-batch
+// deduplicateBatch from INB-108, missed duplicates straddling batch boundaries:
+// both copies upserted, the later overwrote the earlier, and rows_stored
+// double-counted the key.) No conflict key → passthrough with zero collapsed.
+// ---------------------------------------------------------------------------
+
+export interface DedupResult {
+  rows: Record<string, unknown>[]
+  collapsed: number
+}
+
+export function dedupeByConflictKey(
+  rows: Record<string, unknown>[],
+  conflictKey: string | undefined,
+): DedupResult {
+  if (!conflictKey) return { rows, collapsed: 0 }
+  const cols = conflictKey.split(',').map(c => c.trim())
+  const seen = new Map<string, Record<string, unknown>>()
+  for (const row of rows) {
+    const key = cols.map(c => String(row[c] ?? '')).join('::')
+    seen.set(key, row)
+  }
+  const deduped = Array.from(seen.values())
+  return { rows: deduped, collapsed: rows.length - deduped.length }
+}
+
+// ---------------------------------------------------------------------------
 // Period-date gate (INB-109)
 //
 // Period-aggregate report types carry no usable per-row date in their CSV — the

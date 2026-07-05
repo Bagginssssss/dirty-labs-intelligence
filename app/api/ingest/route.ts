@@ -1,5 +1,5 @@
 import { parseCSV, decodeFileContent } from '@/lib/csv-parser'
-import { partitionRequiredNotNull, periodDatesError } from '@/lib/ingest-validation'
+import { partitionRequiredNotNull, periodDatesError, dedupeByConflictKey } from '@/lib/ingest-validation'
 import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { supabaseAdmin } from '@/lib/supabase-admin'
@@ -8,23 +8,6 @@ import { periodStart } from '@/lib/upload-tracker/gaps'
 import { UPSERT_CONFLICT_KEYS } from '@/lib/upsert-config'
 
 const BATCH_SIZE = 500
-
-// Removes within-batch duplicates by conflict key before an upsert.
-// PostgreSQL raises "ON CONFLICT DO UPDATE command cannot affect row a second time"
-// when two rows in the same statement share the same conflict key values.
-// Last occurrence wins — consistent with upsert semantics.
-function deduplicateBatch(
-  rows: Record<string, unknown>[],
-  conflictKey: string
-): Record<string, unknown>[] {
-  const cols = conflictKey.split(',').map(c => c.trim())
-  const seen = new Map<string, Record<string, unknown>>()
-  for (const row of rows) {
-    const key = cols.map(c => String(row[c] ?? '')).join('::')
-    seen.set(key, row)
-  }
-  return Array.from(seen.values())
-}
 
 // ─── FK resolution helpers ────────────────────────────────────────────────────
 
@@ -236,7 +219,10 @@ export async function POST(request: Request) {
   let rowsReceived = 0
   let rowsStored = 0
   let rowsRejected = 0
-  let rowsDeduplicated = 0
+  // Per-stage counters (INB-68): null until their stage runs, so an error-path
+  // log entry records NULL ("not recorded") rather than a fabricated 0.
+  let rowsMapped: number | null = null
+  let rowsDeduplicated: number | null = null
   let dateRangeStart = ''
   let dateRangeEnd = ''
   let actualDateStart: string | null = null
@@ -320,6 +306,12 @@ export async function POST(request: Request) {
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
 
+    // INB-68: post-mapper count. Differs from rowsReceived when the mapper
+    // reshapes rows — collapse (SmartScout variation rollup) or expansion
+    // (keyword-rank date-column unpivot). The three outcomes (deduplicated,
+    // rejected, stored) partition THIS number, not rowsReceived.
+    rowsMapped = mappedRows.length
+
     // Derive effective report type for sp_campaign_performance.
     // SP uploads include "Program Type" = "Sponsored Products"; SB uploads omit the column (null).
     // The mapper stores it as program_type. First row wins.
@@ -343,6 +335,16 @@ export async function POST(request: Request) {
     rowsRejected += requiredRejects.length
     for (const rej of requiredRejects.slice(0, 10)) ingestErrors.push(rej.reason)
 
+    // 4c. Upload-wide dedup (INB-68): collapse duplicate natural keys across the
+    // WHOLE upload, last occurrence wins — the same final rows the DB's upsert
+    // overwrite produced before, but counted honestly (the per-batch dedup this
+    // replaces missed duplicates straddling batch boundaries and double-counted
+    // them as stored). Runs after FK/validation because conflict keys reference
+    // resolved columns (asin_id, campaign_id). No conflict key → passthrough.
+    const conflictKey = UPSERT_CONFLICT_KEYS[tableName]
+    const { rows: uniqueRows, collapsed } = dedupeByConflictKey(kept, conflictKey)
+    rowsDeduplicated = collapsed
+
     // Derive actual date coverage from stored rows so the log entry is accurate
     // even when the operator leaves the date range form fields blank.
     //
@@ -360,7 +362,7 @@ export async function POST(request: Request) {
       subscribe_and_save:               ['report_date', 'date_range_end'],
     }
     const dateCols = DATE_COL_OVERRIDES[tableName] ?? ['report_date']
-    const allDates = kept
+    const allDates = uniqueRows
       .flatMap(r => dateCols.map(col => r[col]))
       .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
       .sort()
@@ -373,26 +375,20 @@ export async function POST(request: Request) {
 
     // 5. Insert in batches of 500 — never truncates.
     // Tables in UPSERT_CONFLICT_KEYS use upsert so re-uploads overwrite stale rows.
-    // Each batch is deduplicated first to prevent within-batch conflict errors.
-    // If a batch statement fails (e.g. one unexpected constraint violation), we
-    // fall back to inserting that batch row-by-row so a single bad row can never
-    // discard the rest of the batch (INB-117). Defence-in-depth alongside the
-    // step-4b filter: that catches the known empty-required-field case up front;
-    // this catches anything else the database rejects.
-    const conflictKey = UPSERT_CONFLICT_KEYS[tableName]
+    // Rows are already unique per natural key (step 4c), so no within-batch
+    // conflict errors are possible. If a batch statement fails (e.g. one
+    // unexpected constraint violation), we fall back to inserting that batch
+    // row-by-row so a single bad row can never discard the rest of the batch
+    // (INB-117). Defence-in-depth alongside the step-4b filter: that catches the
+    // known empty-required-field case up front; this catches anything else the
+    // database rejects.
     const writeRows = (rows: Record<string, unknown>[]) =>
       conflictKey
         ? supabaseAdmin.from(tableName).upsert(rows, { onConflict: conflictKey })
         : supabaseAdmin.from(tableName).insert(rows)
 
-    for (let i = 0; i < kept.length; i += BATCH_SIZE) {
-      const raw = kept.slice(i, i + BATCH_SIZE)
-      const batch = conflictKey ? deduplicateBatch(raw, conflictKey) : raw
-      // Count rows the within-batch dedup collapsed, so silent overwrites are
-      // visible in the response instead of vanishing between received and stored
-      // (INB-108). For business_report this is now 0 — grouping replaces the
-      // collapse — but the visibility matters for every report type.
-      rowsDeduplicated += raw.length - batch.length
+    for (let i = 0; i < uniqueRows.length; i += BATCH_SIZE) {
+      const batch = uniqueRows.slice(i, i + BATCH_SIZE)
       const { error } = await writeRows(batch)
       if (!error) {
         rowsStored += batch.length
@@ -420,6 +416,8 @@ export async function POST(request: Request) {
       date_range_start: dateRangeStart || actualDateStart || null,
       date_range_end:   dateRangeEnd   || actualDateEnd   || null,
       rows_received: rowsReceived,
+      rows_mapped: rowsMapped,
+      rows_deduplicated: rowsDeduplicated,
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
       status: rowsRejected === 0 ? 'success' : rowsStored > 0 ? 'partial' : 'failed',
@@ -437,6 +435,7 @@ export async function POST(request: Request) {
       report_type: reportType,
       table: tableName,
       rows_received: rowsReceived,
+      rows_mapped: rowsMapped,
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
       rows_deduplicated: rowsDeduplicated,
@@ -457,6 +456,8 @@ export async function POST(request: Request) {
           date_range_start: dateRangeStart || actualDateStart || null,
           date_range_end:   dateRangeEnd   || actualDateEnd   || null,
           rows_received: rowsReceived,
+          rows_mapped: rowsMapped,
+          rows_deduplicated: rowsDeduplicated,
           rows_stored: rowsStored,
           rows_rejected: rowsRejected,
           status: 'failed',
