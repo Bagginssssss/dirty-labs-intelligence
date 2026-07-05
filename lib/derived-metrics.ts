@@ -121,6 +121,33 @@ export interface CalculationResult {
   rows_found: { campaigns: number; business: number; subscribe_and_save: number }
 }
 
+// ─── Feeder tables + upload-recalc decision (INB-86) ──────────────────────────
+//
+// The tables whose uploads must trigger a derived_metrics_daily recalc. This
+// list MUST mirror the .from() reads inside calculateDerivedMetrics below —
+// add a feed there → add it here (kept in this file precisely so the two can't
+// drift apart in separate modules; see the INB-88 config-drift lesson).
+export const DERIVED_METRICS_FEEDER_TABLES = [
+  'sp_campaign_performance',
+  'business_report_daily',
+  'subscribe_and_save',
+] as const
+
+// Decides whether (and for which window) an upload should trigger a recalc.
+// Pure: null for non-feeder tables, and defensively null when the covered
+// window is missing or inverted — the caller reports 'skipped' rather than
+// recalcing a nonsense range.
+export function recalcPlanForUpload(
+  targetTable: string,
+  coveredStart: string | null,
+  coveredEnd: string | null,
+): { start: string; end: string } | null {
+  if (!(DERIVED_METRICS_FEEDER_TABLES as readonly string[]).includes(targetTable)) return null
+  if (!coveredStart || !coveredEnd) return null
+  if (coveredStart > coveredEnd) return null
+  return { start: coveredStart, end: coveredEnd }
+}
+
 // ─── Core calculation ─────────────────────────────────────────────────────────
 
 export async function calculateDerivedMetrics(

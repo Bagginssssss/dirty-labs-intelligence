@@ -6,6 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
 import { periodStart } from '@/lib/upload-tracker/gaps'
 import { UPSERT_CONFLICT_KEYS } from '@/lib/upsert-config'
+import { calculateDerivedMetricsRange, recalcPlanForUpload } from '@/lib/derived-metrics'
 
 const BATCH_SIZE = 500
 
@@ -425,6 +426,24 @@ export async function POST(request: Request) {
       ingestion_method: 'csv_upload',
     })
 
+    // 7. Auto-recalc derived metrics for the covered window (INB-86). Feeder
+    // tables only; fully-rejected uploads changed nothing, so skip those too.
+    // Awaited but NON-FATAL: the upload has already succeeded and been logged —
+    // a recalc failure is surfaced via recalc_status, never a failed upload.
+    let recalcStatus: 'ok' | 'failed' | 'skipped' = 'skipped'
+    const recalcPlan = rowsStored > 0
+      ? recalcPlanForUpload(tableName, dateRangeStart || actualDateStart, dateRangeEnd || actualDateEnd)
+      : null
+    if (recalcPlan) {
+      try {
+        await calculateDerivedMetricsRange(brandId, recalcPlan.start, recalcPlan.end)
+        recalcStatus = 'ok'
+      } catch (err) {
+        recalcStatus = 'failed'
+        console.error(`[ingest] derived-metrics recalc failed after ${tableName} upload (${recalcPlan.start}..${recalcPlan.end}):`, err)
+      }
+    }
+
     // Surface detected granularity for BA Customer Loyalty uploads so operator can verify.
     const granularityDetected = (reportType === 'brand_analytics_customer_loyalty' && mappedRows.length > 0)
       ? (mappedRows[0] as Record<string, unknown>).granularity as string
@@ -439,6 +458,8 @@ export async function POST(request: Request) {
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
       rows_deduplicated: rowsDeduplicated,
+      recalc_status: recalcStatus,
+      ...(recalcPlan ? { recalc_window: recalcPlan } : {}),
       parse_errors: ingestErrors,
       ...(granularityDetected ? { granularity_detected: granularityDetected } : {}),
     })
