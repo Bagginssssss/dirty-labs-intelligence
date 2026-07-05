@@ -206,3 +206,8 @@ Surface these whenever a change could affect ingest or metrics:
 - Pre-approved without asking: `npm test`, `npm run build`, lint, `tsc --noEmit`.
 - Require explicit human go-ahead: DB migrations / schema changes, destructive git ops, every `git push`.
 - Never commit secrets; `.env.local` stays gitignored.
+
+### Push safety (added after INB-136 order-of-operations slip)
+- Before any commit, verify the current branch with `git status -sb` — never commit a ticket on `main`.
+- One ticket = one branch off fresh `main`; create it with `git checkout -b` BEFORE any implementation.
+- Push the explicit named branch only. NEVER chain a fallback push (e.g. `git push origin <branch> || git push origin HEAD`) — a missing or wrong branch must fail loudly, never silently fall back to pushing HEAD/main.
