@@ -20,6 +20,15 @@ Agentic PPC manager — not primarily a dashboard. AI agent understands Dirty La
 - Anthropic API — claude-sonnet-4-6
 - Claude Code (VS Code) — build tool
 
+### Local startup modes
+- Development (editing code): `npm run dev` — hot reload, on-demand compilation.
+- Reporting session (no editing): `npm run report` (= production build + start) — removes dev
+  compilation/hot-reload overhead, more stable for long sessions. Stop the dev server first (port 3000).
+  NOTE (INB-137, measured 2026-07-05): prod mode does NOT meaningfully cut dashboard load — ~3 min in
+  BOTH dev and prod. Bottleneck is server-side data loading (~20 Supabase queries / fetch-all-then-
+  aggregate), not compilation (dev logs: application-code in minutes, next.js in ms). The render-time
+  fix is INB-74 (caching) + INB-77 (RPC aggregation), not this ticket.
+
 ## Critical Rules
 
 ### Campaign Ad Type Detection
