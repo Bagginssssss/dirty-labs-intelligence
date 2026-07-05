@@ -40,6 +40,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getMonthlyTarget, monthsInRange, sumMonthlyTargets, blendedRoasTarget, AOV_TARGET, CAC_TARGET, MER_TARGET } from './targets';
 import type { MonthIndex } from './targets';
 import { fmtUSDCompact, fmtUSD, fmtRoas, fmtIntCompact, fmtPct, fmtPctSigned } from './format';
+import { latestCoveredActiveSubs, snapshotMoM } from './snapshots';
 import { getAccountSummary } from '@/lib/queries/account';
 import { getCampaignsByAdType } from '@/lib/queries/campaigns';
 import { getHarvestCandidatesTiered } from '@/lib/queries/keywords';
@@ -678,18 +679,18 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
       .gte('report_date', prior90StartStr)
       .lte('report_date', prior90EndStr),
 
-    // 5D: DMD total_revenue for penetration
+    // 5D: DMD total_revenue for penetration + ss_active_subscriptions snapshot (INB-138)
     supabaseAdmin
       .from('derived_metrics_daily')
-      .select('total_revenue')
+      .select('metric_date, total_revenue, ss_active_subscriptions')
       .eq('brand_id', BRAND_ID)
       .gte('metric_date', startDate)
       .lte('metric_date', endDate),
 
-    // 5D: DMD prior month (penetration MoM denominator)
+    // 5D: DMD prior month (penetration MoM denominator + prior subs snapshot)
     supabaseAdmin
       .from('derived_metrics_daily')
-      .select('total_revenue')
+      .select('metric_date, total_revenue, ss_active_subscriptions')
       .eq('brand_id', BRAND_ID)
       .gte('metric_date', priorMonthStart)
       .lte('metric_date', priorMonthEnd),
@@ -877,18 +878,25 @@ async function loadBusinessHealth(period: ResolvedPeriod): Promise<BusinessHealt
   const ssCurRows   = (ssCurrentRes.data ?? []) as unknown as SsAggRow[];
   const ssPriorRows = (ssPriorRes.data   ?? []) as unknown as SsAggRow[];
 
-  const activeSubs  = ssCurRows.reduce((s, r) => s + (Number(r.active_subscriptions) || 0), 0);
   const ssRevenue   = ssCurRows.reduce((s, r) => s + (Number(r.ss_revenue) || 0), 0);
-  const priorSubs   = ssPriorRows.reduce((s, r) => s + (Number(r.active_subscriptions) || 0), 0);
   const priorSsRev  = ssPriorRows.reduce((s, r) => s + (Number(r.ss_revenue) || 0), 0);
 
+  type DmdRevRow = { metric_date: string; total_revenue: number | null; ss_active_subscriptions: number | null };
+  const dmdRows      = (dmdRes.data      ?? []) as unknown as DmdRevRow[];
+  const dmdPriorRows = (dmdPriorRes.data ?? []) as unknown as DmdRevRow[];
+
+  // INB-138: active subscriptions is a point-in-time STOCK — never sum it. Take
+  // the latest COVERED day's snapshot from derived_metrics_daily (INB-136); a
+  // trailing 0 day just means no S&S period covers it yet.
+  const activeSubs        = latestCoveredActiveSubs(dmdRows);
+  const priorSubsSnapshot = latestCoveredActiveSubs(dmdPriorRows);
+
   const hasPriorSs    = ssPriorRows.length > 0;
-  const activeSubsMoM = hasPriorSs && priorSubs > 0 ? (activeSubs - priorSubs) / priorSubs : null;
+  const activeSubsMoM = snapshotMoM(activeSubs, priorSubsSnapshot);
   const ssRevenueMoM  = hasPriorSs && priorSsRev > 0 ? (ssRevenue - priorSsRev) / priorSsRev : null;
 
-  type DmdRevRow = { total_revenue: number | null };
-  const totalRevenue  = ((dmdRes.data   ?? []) as unknown as DmdRevRow[]).reduce((s, r) => s + (Number(r.total_revenue) || 0), 0);
-  const priorTotalRev = ((dmdPriorRes.data ?? []) as unknown as DmdRevRow[]).reduce((s, r) => s + (Number(r.total_revenue) || 0), 0);
+  const totalRevenue  = dmdRows.reduce((s, r) => s + (Number(r.total_revenue) || 0), 0);
+  const priorTotalRev = dmdPriorRows.reduce((s, r) => s + (Number(r.total_revenue) || 0), 0);
 
   const penetration     = totalRevenue > 0 ? ssRevenue / totalRevenue : null;
   const priorPenetration = priorTotalRev > 0 && priorSsRev > 0 ? priorSsRev / priorTotalRev : null;
