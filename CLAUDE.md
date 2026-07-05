@@ -114,6 +114,16 @@ supabase/migrations/     — 023 migration files (001–023)
 - Memory: platform_insights, platform_knowledge, platform_watchlist
 - System: goals, report_ingestion_log
 
+### Schema naming exceptions (INB-93 — documented, intentionally not renamed)
+Two historical naming inconsistencies are left as-is. Renaming them is high-blast-radius (mapper,
+UPSERT_CONFLICT_KEYS, unique constraints, the INB-88 constraint checker, report registry, dashboard
+queries/RPCs) for zero functional gain, so per INB-93 the decision is to document rather than rename:
+- `search_query_performance` omits the `brand_analytics_` prefix used by other Brand Analytics source
+  tables (e.g. `brand_analytics_customer_loyalty`); it IS a BA-sourced table despite the name.
+- `smartscout_subcategory_products` uses `created_at` for its ingestion timestamp where most tables use
+  `ingested_at` (same value/semantics, different column name).
+Both are intentional. Do not rename without a dedicated migration + reconcile-every-reference pass.
+
 ## Memory Layer — Important Notes
 seedInitialKnowledge(brandId) and seedDefaultWatches(brandId) are called automatically
 by app/api/analyze/route.ts on first analysis run — DO NOT call manually.
