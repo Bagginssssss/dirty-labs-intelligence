@@ -1,7 +1,7 @@
 import { unstable_cache } from 'next/cache';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { fetchAll } from '@/lib/queries/fetch-all';
 import { REPORT_REGISTRY, ReportRegistryEntry } from './registry';
+import { fetchDistinctDates } from './coverage';
 import { ReportStatus, calculateStatus } from './status';
 import { GapAnalysis, detectGaps } from './gaps';
 
@@ -116,25 +116,11 @@ async function _loadTrackerData(brandId: string): Promise<TrackerRow[]> {
             entry.granularity === 'monthly';
 
           if (needsDistinct) {
-            // fetchAll with only the date column, then deduplicate client-side.
-            // Preserves ascending order from ORDER BY so Set insertion is sorted.
-            type DateRow = Record<string, unknown>;
-            const allRows = await fetchAll<DateRow>(() => {
-              let q = supabaseAdmin
-                .from(entry.source_table)
-                .select(entry.date_column)
-                .eq('brand_id', brandId);
-              if (entry.source_filter) {
-                q = q.in(entry.source_filter.column, entry.source_filter.values);
-              }
-              return q.order(entry.date_column, { ascending: true });
-            });
-            const seen = new Set<string>();
-            for (const row of allRows) {
-              const d = String(row[entry.date_column] ?? '').slice(0, 10);
-              if (d.length === 10) seen.add(d);
-            }
-            distinctDates = [...seen];
+            // INB-139: server-side SELECT DISTINCT via the coverage RPC. The old
+            // fetchAll here pulled every source row for the brand (448K rows on
+            // sp_targeting_report → statement timeout); the distinct-date list
+            // is tiny (~127 dates) and comes back ordered in one call.
+            distinctDates = await fetchDistinctDates(entry, brandId);
             coverageStart = distinctDates[0] ?? null;
             coverageEnd   = distinctDates[distinctDates.length - 1] ?? null;
           } else {
