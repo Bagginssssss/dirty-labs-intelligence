@@ -174,6 +174,8 @@ export type SearchIntelData = {
   brandQueries: SQPRow[];
   shareGaps: SQPRow[];
   sqpReportPeriod: string;
+  /** Cadence of the SQP rows in the window ('wk' | 'mo'); null = mixed/unknown → omit the unit (INB-143). */
+  volumeUnit: 'wk' | 'mo' | null;
   rankMovers: RankMover[];
   rankWindowLabel: string;
 };

@@ -3,6 +3,9 @@ import { KeywordRankMovers } from './KeywordRankMovers';
 import { fmtPct, fmtIntCompact } from '@/lib/dashboard/format';
 
 export function SearchIntelligence({ data }: { data: SearchIntelData }) {
+  // INB-143: unit follows the cadence of the rows in the window; null (mixed/
+  // unknown) omits the unit rather than claim a cadence the data can't prove.
+  const unit = data.volumeUnit ? `searches/${data.volumeUnit}` : 'searches';
   return (
     <section className="bg-[#16161a] border border-[#1e1e2e] rounded-[6px] p-[11px]">
       <h3 className="text-[10px] tracking-[0.1em] text-[#3b82f6] mb-[9px] border-b border-[#1e1e2e] pb-[6px]">
@@ -10,7 +13,7 @@ export function SearchIntelligence({ data }: { data: SearchIntelData }) {
       </h3>
 
       <div className="text-[8px] tracking-[0.1em] text-[#3b82f6] mt-[7px] mb-[4px]">
-        TOP BRAND QUERIES — purchase share · searches/mo
+        TOP BRAND QUERIES — purchase share · {unit}
       </div>
       {data.brandQueries.length === 0 ? (
         <div className="text-[9px] text-[#475569] italic">No SQP data.</div>
@@ -19,7 +22,7 @@ export function SearchIntelligence({ data }: { data: SearchIntelData }) {
       )}
 
       <div className="text-[8px] tracking-[0.1em] text-[#3b82f6] mt-[7px] mb-[4px] flex items-center gap-[6px]">
-        SHARE GAPS — high volume · low brand share · searches/mo
+        SHARE GAPS — high volume · low brand share · {unit}
         <span className="text-[7px] px-1 py-[1px] rounded-[2px] bg-[#1e1e2e] text-[#475569] tracking-normal">
           NTB opportunity
         </span>

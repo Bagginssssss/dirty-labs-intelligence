@@ -41,6 +41,9 @@ import { getMonthlyTarget, monthsInRange, sumMonthlyTargets, blendedRoasTarget, 
 import type { MonthIndex } from './targets';
 import { fmtUSDCompact, fmtUSD, fmtRoas, fmtIntCompact, fmtPct, fmtPctSigned } from './format';
 import { latestCoveredActiveSubs, snapshotMoM } from './snapshots';
+import { deriveSqpVolumeUnit } from './sqp-granularity';
+import { fetchDistinctDates } from '@/lib/upload-tracker/coverage';
+import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry';
 import { getAccountSummary } from '@/lib/queries/account';
 import { getCampaignsByAdType } from '@/lib/queries/campaigns';
 import { getHarvestCandidatesTiered } from '@/lib/queries/keywords';
@@ -1241,6 +1244,21 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
     console.error('loadSearchIntel: rank movers failed:', err);
   }
 
+  // 3D: volume unit — SQP cadence is only inferable from report_date spacing
+  // (monthly through Apr 2026, weekly after; no granularity column). One
+  // bounded coverage-RPC call (INB-139) fetches all distinct dates; mixed or
+  // undeterminable windows stay null so the header omits the unit (INB-143).
+  let volumeUnit: 'wk' | 'mo' | null = null;
+  try {
+    const sqpEntry = REPORT_REGISTRY.find(e => e.internal_id === 'search_query_performance');
+    if (sqpEntry) {
+      const dates = await fetchDistinctDates(sqpEntry, BRAND_ID);
+      volumeUnit = deriveSqpVolumeUnit(dates, period.start, period.end);
+    }
+  } catch (err) {
+    console.error('loadSearchIntel: volume unit derivation failed:', err);
+  }
+
   const MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const fmt  = (d: string) => { const [,m,day] = d.split('-').map(Number); return `${MONS[m-1]} ${day}`; };
 
@@ -1248,6 +1266,7 @@ async function loadSearchIntel(period: ResolvedPeriod): Promise<SearchIntelData>
     brandQueries,
     shareGaps,
     sqpReportPeriod: period.label,
+    volumeUnit,
     rankMovers,
     rankWindowLabel: `${fmt(period.start)} → ${fmt(period.end)}`,
   };
