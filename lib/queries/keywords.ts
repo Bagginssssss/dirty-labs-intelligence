@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { SearchTermRow } from './types'
+import type { SearchTermRow } from './types'
 import { HARVEST_READY_THRESHOLDS, HARVEST_INVESTIGATION_THRESHOLDS } from '@/lib/dashboard/thresholds'
 
 // Shape returned by get_search_term_report_aggregated RPC.
@@ -100,13 +100,14 @@ async function fetchAutoTerms(
   startDate: string,
   endDate: string,
 ): Promise<SearchTermRow[]> {
-  // INB-36 stopgap: campaigns.targeting_type is never populated by CSV
-  // ingestion. Detect auto campaigns by name convention — SP.A prefix.
+  // INB-36: campaigns.targeting_type is backfilled (migration 038) and
+  // maintained by ingest — detect auto campaigns by the real column, not the
+  // SP.A% name convention (live-verified identical sets at switch time).
   const { data: autoCampaigns, error: autoErr } = await supabaseAdmin
     .from('campaigns')
     .select('id')
     .eq('brand_id', brandId)
-    .ilike('campaign_name', 'SP.A%')
+    .eq('targeting_type', 'Automatic targeting')
 
   if (autoErr) throw new Error(`fetchAutoTerms campaigns failed: ${autoErr.message}`)
 

@@ -15,6 +15,9 @@ const BATCH_SIZE = 500
 // Resolves (or creates) a campaign row and returns its UUID.
 // When reportDate is provided (sp_campaign_performance ingests), maintains
 // campaigns.launch_date as MIN(report_date) seen so far — "earlier date wins".
+// When targetingType is provided (perf rows carry 'Automatic targeting' /
+// 'Manual targeting'; SB/SBV rows carry null), maintains campaigns.targeting_type
+// fill-if-null — a stored non-null value is never overwritten (INB-36).
 // Results are cached in campaignCache to avoid redundant DB round-trips per file.
 async function resolveCampaignId(
   brandId: string,
@@ -22,36 +25,46 @@ async function resolveCampaignId(
   name: string,
   campaignCache: Map<string, string>,
   reportDate?: string,
+  targetingType?: string,
 ): Promise<string | null> {
   const cacheKey = `${brandId}::${amazonId}`
   if (campaignCache.has(cacheKey)) return campaignCache.get(cacheKey)!
 
   const { data: existing } = await supabaseAdmin
     .from('campaigns')
-    .select('id, launch_date')
+    .select('id, launch_date, targeting_type')
     .eq('brand_id', brandId)
     .eq('campaign_id', amazonId)
     .maybeSingle()
 
   if (existing) {
     campaignCache.set(cacheKey, existing.id)
+    const patch: Record<string, string> = {}
     // Update launch_date only when this file's date is strictly earlier than stored.
     if (reportDate) {
       const stored = existing.launch_date as string | null
-      if (!stored || reportDate < stored) {
-        await supabaseAdmin
-          .from('campaigns')
-          .update({ launch_date: reportDate })
-          .eq('id', existing.id)
-        // Non-throwing: a failure here only means launch_date lags; data is not lost.
-      }
+      if (!stored || reportDate < stored) patch.launch_date = reportDate
+    }
+    if (targetingType && !existing.targeting_type) patch.targeting_type = targetingType
+    if (Object.keys(patch).length > 0) {
+      await supabaseAdmin
+        .from('campaigns')
+        .update(patch)
+        .eq('id', existing.id)
+      // Non-throwing: a failure here only means launch_date/targeting_type lag; data is not lost.
     }
     return existing.id
   }
 
   const { data: inserted, error } = await supabaseAdmin
     .from('campaigns')
-    .insert({ brand_id: brandId, campaign_id: amazonId, campaign_name: name, launch_date: reportDate ?? null })
+    .insert({
+      brand_id: brandId,
+      campaign_id: amazonId,
+      campaign_name: name,
+      launch_date: reportDate ?? null,
+      targeting_type: targetingType ?? null,
+    })
     .select('id')
     .single()
 
@@ -167,6 +180,7 @@ async function resolveRows(
         row._campaign_name as string,
         campaignCache,
         row.report_date as string | undefined,
+        (row.targeting_type as string | undefined) ?? undefined,
       )
       if (!campaignUuid) { rejected++; continue }
 
@@ -188,6 +202,7 @@ async function resolveRows(
         row._campaign_name as string,
         campaignCache,
         row.report_date as string | undefined,
+        (row.targeting_type as string | undefined) ?? undefined,
       )
       if (!campaignUuid) { rejected++; continue }
       clean.campaign_id = campaignUuid
