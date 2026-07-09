@@ -1,5 +1,5 @@
 import { parseCSV, decodeFileContent } from '@/lib/csv-parser'
-import { partitionRequiredNotNull, periodDatesError, dedupeByConflictKey } from '@/lib/ingest-validation'
+import { partitionRequiredNotNull, periodDatesError, periodDateRangeError, dedupeByConflictKey } from '@/lib/ingest-validation'
 import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
@@ -306,6 +306,14 @@ export async function POST(request: Request) {
     const periodError = periodDatesError(reportType, dateRangeStart, dateRangeEnd)
     if (periodError) {
       return Response.json({ error: periodError }, { status: 400 })
+    }
+
+    // Plausibility guard (INB-145 follow-up): a provided date must be a real
+    // calendar date within [2020-01-01, 2035-12-31] and start ≤ end — for ALL
+    // report types. Stops a typed garbage year (275760) before it stamps rows.
+    const dateRangeError = periodDateRangeError(dateRangeStart, dateRangeEnd)
+    if (dateRangeError) {
+      return Response.json({ error: dateRangeError }, { status: 400 })
     }
 
     // 3. Map rows

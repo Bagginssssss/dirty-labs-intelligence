@@ -116,6 +116,51 @@ export function requiresPeriodDates(reportType: string): boolean {
   return typeRequiresPeriodDates(reportType)
 }
 
+// ---------------------------------------------------------------------------
+// Date-plausibility guard (INB-145 follow-up)
+//
+// The period-date gate only checks PRESENCE. A typed garbage year (275760) once
+// stamped 108 rows into a data table before QC caught it. This validates any
+// PROVIDED date_range value — for ALL report types — against a sane window and
+// real-calendar-date-ness, plus start ≤ end. Empty values pass (the presence
+// gate owns required-ness); a bad value is rejected with 400 before any DB access.
+// ---------------------------------------------------------------------------
+
+const MIN_PERIOD_DATE = '2020-01-01'
+const MAX_PERIOD_DATE = '2035-12-31'
+
+// True for a real YYYY-MM-DD calendar date (rejects 2026-02-30, 2026-13-01, and
+// any non-4-digit-year form like 275760-09-13).
+function isRealIsoDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+  const d = new Date(s + 'T00:00:00Z')
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
+}
+
+// Returns an actionable error when a provided date is malformed, out of the
+// supported window, or start > end; null when the range is empty/partial/valid.
+// Pure — used by the /api/ingest guard (and available to the client).
+export function periodDateRangeError(
+  dateRangeStart: string,
+  dateRangeEnd: string,
+): string | null {
+  for (const [label, raw] of [['Start', dateRangeStart], ['End', dateRangeEnd]] as const) {
+    const v = raw.trim()
+    if (!v) continue
+    if (!isRealIsoDate(v)) {
+      return `Date Range ${label} "${v}" is not a valid date (expected YYYY-MM-DD between ${MIN_PERIOD_DATE} and ${MAX_PERIOD_DATE}). Check for a typo and re-upload.`
+    }
+    if (v < MIN_PERIOD_DATE || v > MAX_PERIOD_DATE) {
+      return `Date Range ${label} "${v}" is outside the supported window ${MIN_PERIOD_DATE} to ${MAX_PERIOD_DATE}. Check for a typo and re-upload.`
+    }
+  }
+  const s = dateRangeStart.trim(), e = dateRangeEnd.trim()
+  if (s && e && s > e) {
+    return `Date Range Start "${s}" is after End "${e}". Correct the dates and re-upload.`
+  }
+  return null
+}
+
 // Returns an actionable error string when reportType needs the form's date range
 // and either field is blank; null otherwise. Pure — used by both the /api/ingest
 // gate and the /upload client for the required-field UX.
