@@ -7,6 +7,8 @@ import { mapBusinessReportDaily } from './business-report-daily'
 import { mapPurchasedProduct } from './purchased-product'
 import { mapScaleInsightsBidLog } from './scale-insights-bid-log'
 import { mapScaleInsightsKeywordRank } from './scale-insights-keyword-rank'
+import { mapScaleInsightsRuleChangeLog } from './scale-insights-rule-change-log'
+import { mapScaleInsightsRuleAssignments } from './scale-insights-rule-assignments'
 import { mapSubscribeAndSave } from './subscribe-and-save'
 import { mapSmartscoutShareOfVoice } from './smartscout-share-of-voice'
 import { mapSmartscoutBrandRevenue } from './smartscout-brand-revenue'
@@ -33,6 +35,8 @@ const MAPPERS: Record<string, MapperFn> = {
   purchased_product_report:    mapPurchasedProduct,
   scale_insights_bid_log:      mapScaleInsightsBidLog,
   scale_insights_keyword_rank: mapScaleInsightsKeywordRank,
+  scale_insights_rule_change_log:  mapScaleInsightsRuleChangeLog,
+  scale_insights_rule_assignments: mapScaleInsightsRuleAssignments,
   subscribe_and_save:          mapSubscribeAndSave,
   smartscout_share_of_voice:   mapSmartscoutShareOfVoice,
   smartscout_brand_revenue:    mapSmartscoutBrandRevenue,
@@ -67,6 +71,8 @@ export * from './business-report-daily'
 export * from './purchased-product'
 export * from './scale-insights-bid-log'
 export * from './scale-insights-keyword-rank'
+export * from './scale-insights-rule-change-log'
+export * from './scale-insights-rule-assignments'
 export * from './subscribe-and-save'
 export * from './smartscout-share-of-voice'
 export * from './smartscout-brand-revenue'

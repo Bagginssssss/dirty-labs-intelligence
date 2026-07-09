@@ -44,7 +44,10 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
     if (!f) return
     try {
       const content = await decodeFileContent(f.slice(0, 64 * 1024))
-      setDetectedType(detectReportType(parseCSV(content).headers).reportType)
+      const parsed = parseCSV(content)
+      // Pass the first data row so content-gated detection (INB-148 rule change
+      // logs, which share a header with the bidding-rule log) resolves client-side.
+      setDetectedType(detectReportType(parsed.headers, parsed.rows[0]).reportType)
     } catch {
       // Unreadable header region — leave fields optional; the server still gates.
     }

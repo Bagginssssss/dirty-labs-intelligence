@@ -45,6 +45,8 @@ const CURRENT_DB_INDEXES = [
   { table_name: 'virtual_bundle_sales_snapshots', index_name: 'uq_vbss', columns: ['brand_id', 'bundle_asin', 'snapshot_date'] },
   { table_name: 'brand_analytics_customer_loyalty', index_name: 'brand_analytics_customer_loya_brand_id_period_end_date_gran_key', columns: ['brand_id', 'period_end_date', 'granularity'] },
   { table_name: 'platform_knowledge', index_name: 'uq_platform_knowledge', columns: ['brand_id', 'category', 'key'] },
+  { table_name: 'scale_insights_rule_change_log', index_name: 'scale_insights_rule_change_log_natural_key', columns: ['brand_id', 'created_date', 'log_type', 'campaign', 'ad_group', 'keyword_or_target', 'rule_name', 'change_value'] },
+  { table_name: 'scale_insights_rule_assignments', index_name: 'scale_insights_rule_assignments_natural_key', columns: ['brand_id', 'snapshot_date', 'campaign', 'ad_group'] },
 ]
 
 // ---------------------------------------------------------------------------

@@ -31,6 +31,10 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   virtual_bundle_sales_daily:           'brand_id,bundle_asin,sale_date',
   virtual_bundle_sales_snapshots:       'brand_id,bundle_asin,snapshot_date',
   brand_analytics_customer_loyalty:     'brand_id,period_end_date,granularity',
+  // INB-148 — rolling-window change logs overlap by design; assignment snapshots
+  // are re-uploaded weekly. Both dedup on their natural key (migration 039).
+  scale_insights_rule_change_log:  'brand_id,created_date,log_type,campaign,ad_group,keyword_or_target,rule_name,change_value',
+  scale_insights_rule_assignments: 'brand_id,snapshot_date,campaign,ad_group',
 }
 
 // Everything the constraint checker must cover: the ingest map above PLUS conflict

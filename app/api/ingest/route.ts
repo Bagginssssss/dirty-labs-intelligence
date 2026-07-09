@@ -274,7 +274,10 @@ export async function POST(request: Request) {
       reportType = reportTypeOverride
       tableName = REPORT_TYPE_TO_TABLE[reportTypeOverride]
     } else {
-      const detection = detectReportType(parseResult.headers)
+      // Pass the first data row so content-gated signatures (INB-148: the
+      // ScaleInsights rule change logs, which share a header with the bidding-rule
+      // log) can discriminate on a column value, not just the header shape.
+      const detection = detectReportType(parseResult.headers, parseResult.rows[0])
       reportType = detection.reportType
       tableName = detection.tableName
       detectionHint = detection.hint
@@ -376,6 +379,8 @@ export async function POST(request: Request) {
       virtual_bundle_sales_snapshots:   ['snapshot_date'],
       virtual_bundle_sales_daily:       ['sale_date'],
       subscribe_and_save:               ['report_date', 'date_range_end'],
+      scale_insights_rule_change_log:   ['created_date'],
+      scale_insights_rule_assignments:  ['snapshot_date'],
     }
     const dateCols = DATE_COL_OVERRIDES[tableName] ?? ['report_date']
     const allDates = uniqueRows

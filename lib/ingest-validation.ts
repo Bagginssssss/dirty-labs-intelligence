@@ -17,6 +17,12 @@ import { REPORT_REGISTRY } from './upload-tracker/registry'
 // (For search_query_performance the table name and report type are identical.)
 export const REQUIRED_NOT_NULL: Record<string, string[]> = {
   search_query_performance: ['search_query'],
+  // INB-148: log_type null = unknown Action (e.g. a bidding-rule log mis-fed
+  // here) — reject rather than violate the CHECK. created_date null = malformed
+  // Created. campaign/rule_name are '' -normalized in the mapper, so an empty
+  // value here means a genuinely blank audit row worth rejecting.
+  scale_insights_rule_change_log: ['created_date', 'log_type', 'campaign', 'rule_name'],
+  scale_insights_rule_assignments: ['snapshot_date', 'sponsored_type', 'campaign'],
 }
 
 export interface RejectedRow {

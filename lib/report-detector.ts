@@ -23,6 +23,17 @@ function lacks(normHeaders: string[], ...substrings: string[]): boolean {
   return substrings.every(sub => !normHeaders.some(h => h.includes(sub)))
 }
 
+// Reads a raw-row value by its NORMALIZED column name (BOM/casing-insensitive).
+// Used by content-based (matchRow) signatures — the three ScaleInsights rule
+// change-log exports share a header with the bidding-rule log, so they can only
+// be separated by the Action column's value.
+function rowValue(row: Record<string, string>, normKey: string): string {
+  for (const k of Object.keys(row)) {
+    if (normalize(k) === normKey) return row[k] ?? ''
+  }
+  return ''
+}
+
 // ─── Signature table ──────────────────────────────────────────────────────────
 //
 // ORDER IS SIGNIFICANT — first match wins.
@@ -56,6 +67,11 @@ const SIGNATURES: Array<{
   tableName: string
   hint?: string
   match: (h: string[]) => boolean
+  // Optional content gate: when present, the signature matches only if a sample
+  // data row is supplied AND passes. A signature with matchRow is SKIPPED when no
+  // sample row is available (header-only callers), so a less-specific signature
+  // later in the table still wins — preserving pre-INB-148 behavior.
+  matchRow?: (row: Record<string, string>) => boolean
 }> = [
   {
     // Amazon Brand Analytics: Search Query Performance report.
@@ -139,6 +155,37 @@ const SIGNATURES: Array<{
     reportType: 'purchased_product_report',
     tableName: 'purchased_product_report',
     match: h => has(h, 'purchased_asin') || (has(h, 'advertised_asin') && has(h, 'purchased_title')),
+  },
+  {
+    // Scale Insights Import/Negative/Revive rule change logs (INB-148). These
+    // three exports share a BYTE-IDENTICAL header with the Bidding rule change log
+    // below (Created/Action/Rule/Criteria/Change/…), so header shape alone cannot
+    // separate them — the Action column value is the discriminator. MUST precede
+    // the bid_log signature; without a sample row (matchRow un-evaluable) this is
+    // skipped and the bidding-rule signature claims the file as before.
+    reportType: 'scale_insights_rule_change_log',
+    tableName: 'scale_insights_rule_change_log',
+    match: h => has(h, 'created') && has(h, 'action') && has(h, 'rule') && has(h, 'criteria') && has(h, 'change'),
+    matchRow: row => {
+      const action = rowValue(row, 'action').trim().toLowerCase()
+      return action === 'import rule' || action === 'negative rule' || action === 'revive rule'
+    },
+  },
+  {
+    // Scale Insights AssignedRules export (INB-148) — account-wide rule assignments
+    // per ad group. The ten/eleven rule-list columns (Bidding Rules … Daily Budget
+    // Rules) are unique to this file; "sponsored" + "bidding_rules" is unambiguous.
+    reportType: 'scale_insights_rule_assignments',
+    tableName: 'scale_insights_rule_assignments',
+    match: h => has(h, 'sponsored') && has(h, 'bidding_rules') && has(h, 'daily_budget_rules'),
+  },
+  {
+    // Scale Insights UnassignedRules export (INB-148) — narrower header, no rule
+    // columns. Same table as Assigned (is_assigned is content-derived). lacks
+    // bidding_rules keeps it from ever shadowing the Assigned signature above.
+    reportType: 'scale_insights_rule_assignments',
+    tableName: 'scale_insights_rule_assignments',
+    match: h => has(h, 'sponsored') && has(h, 'associated_asin') && has(h, 'last_30_days_ad_spend') && lacks(h, 'bidding_rules'),
   },
   {
     // Confirmed Scale Insights Bid Change Log headers: "Rule", "Criteria", "Change".
@@ -275,13 +322,18 @@ const SIGNATURES: Array<{
   },
 ]
 
-export function detectReportType(headers: string[]): DetectionResult {
+export function detectReportType(
+  headers: string[],
+  sampleRow?: Record<string, string>,
+): DetectionResult {
   const normHeaders = headers.map(normalize)
 
   for (const sig of SIGNATURES) {
-    if (sig.match(normHeaders)) {
-      return { reportType: sig.reportType, tableName: sig.tableName, hint: sig.hint }
-    }
+    if (!sig.match(normHeaders)) continue
+    // Content-gated signatures need a sample row that passes; when none is
+    // available the signature is skipped so a later one can still match.
+    if (sig.matchRow && !(sampleRow && sig.matchRow(sampleRow))) continue
+    return { reportType: sig.reportType, tableName: sig.tableName, hint: sig.hint }
   }
 
   return { reportType: 'unknown', tableName: '' }
