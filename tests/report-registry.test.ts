@@ -18,7 +18,7 @@ const LIVE_SCHEMA: Record<string, string[]> = {
   sp_campaign_performance: ['ad_type'],
   sp_targeting_report: ['ad_type'],
   sp_search_term_report: ['ad_type'],
-  purchased_product_report: ['advertised_asin'],
+  purchased_product_report: ['ad_type', 'advertised_asin'],
   search_query_performance: ['search_query'],
   brand_analytics_customer_loyalty: ['granularity'],
   business_report_daily: ['report_date'],
@@ -94,9 +94,11 @@ test('derive: search-term / targeting split on distinct ad_type', async () => {
   assert.ok(mixed.warning, 'mixed ad_type warns')
 })
 
-test('derive: purchased-product pair splits on the Advertised ASIN header', async () => {
+test('derive: purchased-product pair splits by report type (INB-149 — detector now separates them)', async () => {
+  // Was a header probe; INB-149 gave the SB export its own detector signature, so
+  // the report_key is by effective report type.
   assert.equal((await derive('purchased_product_report', ['Date', 'Campaign Name', 'Advertised ASIN', 'Purchased ASIN'], [{}])).reportKey, 'sp_purchased_product')
-  assert.equal((await derive('purchased_product_report', ['Date', 'Campaign Name', 'Purchased ASIN'], [{}])).reportKey, 'sb_attributed_purchases')
+  assert.equal((await derive('sb_attributed_purchases', ['Date', 'Campaign Name', 'Purchased ASIN'], [{}])).reportKey, 'sb_attributed_purchases')
 })
 
 test('derive: loyalty weekly → key, monthly → null+warn', async () => {

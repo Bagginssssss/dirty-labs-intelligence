@@ -149,6 +149,7 @@ const CAMPAIGN_AD_GROUP_TABLES = new Set([
 const CAMPAIGN_ONLY_TABLES = new Set([
   'sp_campaign_performance',
   'purchased_product_report',
+  'sb_attributed_purchases',
 ])
 const ASIN_TABLES = new Set([
   'business_report',

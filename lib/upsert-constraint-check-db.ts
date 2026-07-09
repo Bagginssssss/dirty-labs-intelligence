@@ -4,16 +4,20 @@
 // Server only — imports the service-role client.
 
 import { supabaseAdmin } from './supabase-admin'
-import { ALL_UPSERT_CONFLICT_KEYS } from './upsert-config'
+import { ALL_UPSERT_CONFLICT_KEYS, NULLABLE_KEY_ALLOWLIST } from './upsert-config'
 import {
   findUpsertConstraintViolations,
+  findNullableUniqueKeyColumns,
   type UniqueIndexInfo,
   type UpsertConstraintViolation,
+  type NullableKeyViolation,
 } from './upsert-constraint-check'
 
 export interface UpsertConstraintCheckResult {
   status: 'ok' | 'violations' | 'unavailable'
   violations: UpsertConstraintViolation[]
+  // INB-149: nullable-column-in-unique-key violations (non-allowlisted tables).
+  nullableKeyViolations: NullableKeyViolation[]
   tables_checked: number
   message?: string
 }
@@ -28,27 +32,32 @@ export async function checkUpsertConstraintsLive(): Promise<UpsertConstraintChec
       return {
         status: 'unavailable',
         violations: [],
+        nullableKeyViolations: [],
         tables_checked: tablesChecked,
         message: `constraint introspection unavailable: ${error?.message ?? 'no data returned'}`,
       }
     }
-    const violations = findUpsertConstraintViolations(
-      ALL_UPSERT_CONFLICT_KEYS,
-      data as UniqueIndexInfo[],
-    )
-    if (violations.length) {
+    const indexes = data as UniqueIndexInfo[]
+    const violations = findUpsertConstraintViolations(ALL_UPSERT_CONFLICT_KEYS, indexes)
+    const nullableKeyViolations = findNullableUniqueKeyColumns(indexes, NULLABLE_KEY_ALLOWLIST)
+    if (violations.length || nullableKeyViolations.length) {
+      const parts: string[] = []
+      if (violations.length) parts.push(`${violations.length} configured upsert conflict key(s) have no matching UNIQUE constraint`)
+      if (nullableKeyViolations.length) parts.push(`${nullableKeyViolations.length} non-allowlisted unique constraint(s) contain a nullable column`)
       return {
         status: 'violations',
         violations,
+        nullableKeyViolations,
         tables_checked: tablesChecked,
-        message: `${violations.length} configured upsert conflict key(s) have no matching UNIQUE constraint — upserts on these tables will silently duplicate rows or fail`,
+        message: `${parts.join('; ')} — upserts on these tables can silently duplicate rows or fail`,
       }
     }
-    return { status: 'ok', violations: [], tables_checked: tablesChecked }
+    return { status: 'ok', violations: [], nullableKeyViolations: [], tables_checked: tablesChecked }
   } catch (err) {
     return {
       status: 'unavailable',
       violations: [],
+      nullableKeyViolations: [],
       tables_checked: tablesChecked,
       message: `constraint introspection unavailable: ${err instanceof Error ? err.message : String(err)}`,
     }

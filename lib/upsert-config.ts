@@ -20,7 +20,7 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   // Rolling-pull tables — constraint added in migration 030 (INB-82)
   sp_search_term_report:       'brand_id,campaign_id,ad_group_id,report_date,customer_search_term,targeting',
   sp_targeting_report:         'brand_id,campaign_id,ad_group_id,report_date,targeting,match_type',
-  purchased_product_report:    'brand_id,campaign_id,report_date,advertised_asin,purchased_asin',
+  purchased_product_report:    'brand_id,campaign_id,report_date,ad_type,advertised_asin,purchased_asin,attribution_type',
   derived_metrics_daily:       'brand_id,metric_date',
   derived_metrics_weekly:      'brand_id,week_start',
   subscribe_and_save:              'brand_id,asin_id,sku,report_date',
@@ -45,4 +45,22 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
 export const ALL_UPSERT_CONFLICT_KEYS: Record<string, string> = {
   ...UPSERT_CONFLICT_KEYS,
   platform_knowledge: 'brand_id,category,key',
+}
+
+// INB-149 — nullable-column-in-unique-key ratchet. A NULL in a unique-constraint
+// column is treated as distinct by Postgres, so overlapping upserts duplicate
+// silently (INB-82 / the SB Attributed Purchases defect). The extended INB-88
+// checker (findNullableUniqueKeyColumns) FAILS on any such table NOT listed here.
+// These 7 are pre-existing and out of INB-149's scope (report-only); each entry
+// records the severity found on 2026-07-09 so the follow-up ticket can prioritise.
+// purchased_product_report is deliberately ABSENT — migration 042 fixed it, so it
+// must stay clean or the checker fails.
+export const NULLABLE_KEY_ALLOWLIST: Record<string, string> = {
+  scale_insights_bid_log:        'URGENT — 7,438 NULL-key rows, 2,213 excess dupes (2026-07-09); same defect class actively duplicating. Remediation: INB-150.',
+  scale_insights_keyword_rank:   'latent — 0 NULL-key rows, 0 dupes; harden with NOT NULL DEFAULT. Housekeeping: INB-151.',
+  smartscout_subcategory_brands: 'latent — 0 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
+  sp_campaign_performance:       'latent — 0 NULL-key rows (ad_type always set), 0 dupes. Housekeeping: INB-151.',
+  sp_search_term_report:         'latent — 0 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
+  sp_targeting_report:           'near-latent — 2 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
+  subscribe_and_save:            'latent — 0 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
 }

@@ -33,7 +33,7 @@ const CURRENT_DB_INDEXES = [
   { table_name: 'sp_campaign_performance', index_name: 'uq_campaign_performance', columns: ['brand_id', 'campaign_id', 'report_date', 'ad_type'] },
   { table_name: 'sp_search_term_report', index_name: 'uq_sp_search_term_report', columns: ['brand_id', 'campaign_id', 'ad_group_id', 'report_date', 'customer_search_term', 'targeting'] },
   { table_name: 'sp_targeting_report', index_name: 'uq_sp_targeting_report', columns: ['brand_id', 'campaign_id', 'ad_group_id', 'report_date', 'targeting', 'match_type'] },
-  { table_name: 'purchased_product_report', index_name: 'uq_purchased_product_report', columns: ['brand_id', 'campaign_id', 'report_date', 'advertised_asin', 'purchased_asin'] },
+  { table_name: 'purchased_product_report', index_name: 'uq_purchased_product_report', columns: ['brand_id', 'campaign_id', 'report_date', 'ad_type', 'advertised_asin', 'purchased_asin', 'attribution_type'] },
   { table_name: 'derived_metrics_daily', index_name: 'uq_derived_metrics_daily', columns: ['brand_id', 'metric_date'] },
   { table_name: 'derived_metrics_weekly', index_name: 'uq_derived_metrics_weekly', columns: ['brand_id', 'week_start'] },
   { table_name: 'subscribe_and_save', index_name: 'uq_subscribe_and_save', columns: ['brand_id', 'asin_id', 'sku', 'report_date'] },

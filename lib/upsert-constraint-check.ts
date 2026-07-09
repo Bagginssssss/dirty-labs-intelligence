@@ -15,11 +15,21 @@ export interface UniqueIndexInfo {
   table_name: string
   index_name?: string
   columns: string[]
+  // INB-149: the subset of `columns` that are NULLABLE (attnotnull = false).
+  // Absent/empty means the constraint is NULL-proof.
+  nullable_columns?: string[] | null
 }
 
 export interface UpsertConstraintViolation {
   table: string
   configuredKey: string
+  reason: string
+}
+
+export interface NullableKeyViolation {
+  table: string
+  indexName?: string
+  nullableColumns: string[]
   reason: string
 }
 
@@ -50,6 +60,29 @@ export function findUpsertConstraintViolations(
       reason: indexes.length
         ? `no UNIQUE constraint on (${wanted.join(',')}); table has: ${indexes.map(ix => `(${ix.columns.join(',')})`).join(', ')}`
         : 'table has no unique indexes at all (or does not exist)',
+    })
+  }
+  return violations
+}
+
+// INB-149 — flags unique constraints that contain a NULLABLE column. Postgres
+// treats NULLs as distinct, so a NULL in a unique key lets overlapping upserts
+// duplicate silently (the SB Attributed Purchases defect; also INB-82). Any table
+// with a nullable key column that is NOT in `allowlist` is a violation. Pure.
+export function findNullableUniqueKeyColumns(
+  uniqueIndexes: UniqueIndexInfo[],
+  allowlist: Record<string, string>,
+): NullableKeyViolation[] {
+  const violations: NullableKeyViolation[] = []
+  for (const ix of uniqueIndexes) {
+    const nullable = ix.nullable_columns ?? []
+    if (nullable.length === 0) continue
+    if (Object.prototype.hasOwnProperty.call(allowlist, ix.table_name)) continue
+    violations.push({
+      table: ix.table_name,
+      indexName: ix.index_name,
+      nullableColumns: nullable,
+      reason: `unique constraint ${ix.index_name ?? '(unnamed)'} includes nullable column(s) (${nullable.join(',')}) — NULLs are distinct, so overlapping upserts can duplicate silently. Make them NOT NULL DEFAULT '' or allowlist the table.`,
     })
   }
   return violations

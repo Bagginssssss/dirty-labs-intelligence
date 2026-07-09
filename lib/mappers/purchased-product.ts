@@ -5,9 +5,14 @@ export interface PurchasedProductRow extends MappedRow {
   _campaign_amazon_id: string
   _campaign_name: string
   report_date: string | null
+  // INB-149: ad_type/attribution_type join the NULL-proof key. SP export rows are
+  // ad_type='SP' with an empty attribution_type; the SB path (sb-attributed-purchases)
+  // writes SB/SBV. advertised_asin/purchased_asin are '' -normalized (NOT NULL columns).
+  ad_type: 'SP'
+  attribution_type: string
   advertised_sku: string | null
-  advertised_asin: string | null
-  purchased_asin: string | null
+  advertised_asin: string
+  purchased_asin: string
   purchased_title: string | null
   orders_7d: number | null
   units_7d: number | null
@@ -26,12 +31,16 @@ export function mapPurchasedProduct(row: RawRow, brandId: string): PurchasedProd
     _campaign_amazon_id: get('', 'Campaign ID', 'campaign_id') || campaignName,
     _campaign_name: campaignName,
 
+    ad_type: 'SP',
+    attribution_type: '',
+
     // Amazon uses "Start Date" not "Date" in this report format.
     report_date: parseDate(get('', 'Start Date', 'start_date', 'Date', 'date', 'report_date')),
 
     advertised_sku:   get(null as unknown as string, 'Advertised SKU',  'advertised_sku')  || null,
-    advertised_asin:  get(null as unknown as string, 'Advertised ASIN', 'advertised_asin') || null,
-    purchased_asin:   get(null as unknown as string, 'Purchased ASIN',  'purchased_asin')  || null,
+    // '' -normalized: these are NOT NULL key columns as of migration 042.
+    advertised_asin:  get('', 'Advertised ASIN', 'advertised_asin'),
+    purchased_asin:   get('', 'Purchased ASIN',  'purchased_asin'),
     // "Purchased Title" / "Title" column not present in confirmed Amazon export.
     purchased_title:  null,
 

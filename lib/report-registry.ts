@@ -44,8 +44,8 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
   { report_key: 'sb_keyword', display_name: 'SB Keyword (incl. SBV)', source_group: 'Sponsored Ads', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sp_targeting_report', discriminator: { column: 'ad_type', values: ['SB', 'SBV'] }, requires_period_dates: false, is_active: true, sort_order: 4, notes: null },
   { report_key: 'sp_search_term', display_name: 'SP Search Term', source_group: 'Sponsored Ads', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sp_search_term_report', discriminator: { column: 'ad_type', values: ['SP'] }, requires_period_dates: false, is_active: true, sort_order: 5, notes: null },
   { report_key: 'sb_search_term', display_name: 'SB Search Term', source_group: 'Sponsored Ads', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sp_search_term_report', discriminator: { column: 'ad_type', values: ['SB', 'SBV'] }, requires_period_dates: false, is_active: true, sort_order: 6, notes: null },
-  { report_key: 'sp_purchased_product', display_name: 'SP Purchased Product', source_group: 'Sponsored Ads', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'purchased_product_report', discriminator: { column: 'advertised_asin', op: 'is_not_null' }, requires_period_dates: false, is_active: true, sort_order: 7, notes: "236 SP-campaign rows carry NULL advertised_asin (land under sb_attributed_purchases' predicate) — INB-149." },
-  { report_key: 'sb_attributed_purchases', display_name: 'SB Attributed Purchases', source_group: 'Sponsored Ads', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'purchased_product_report', discriminator: { column: 'advertised_asin', op: 'is_null' }, requires_period_dates: false, is_active: true, sort_order: 8, notes: 'Ingests via the shared purchased_asin detector branch. KNOWN DEFECTS: lossy (14d metrics dropped by the SP-shaped mapper) and dupe-prone (NULL advertised_asin defeats the unique key; 4,983 excess rows found 2026-07-09). Remediation: INB-149.' },
+  { report_key: 'sp_purchased_product', display_name: 'SP Purchased Product', source_group: 'Sponsored Ads', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'purchased_product_report', discriminator: { column: 'ad_type', values: ['SP'] }, requires_period_dates: false, is_active: true, sort_order: 7, notes: 'SP Sponsored Products purchased-product export (ad_type=SP; advertised_asin populated). Repaired in INB-149.' },
+  { report_key: 'sb_attributed_purchases', display_name: 'SB Attributed Purchases', source_group: 'Sponsored Ads', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'purchased_product_report', discriminator: { column: 'ad_type', values: ['SB', 'SBV'] }, requires_period_dates: false, is_active: true, sort_order: 8, notes: 'SB Attributed Purchases export (SB + SBV campaigns). The only purchase-level NTB source for SB. Aggregated per (campaign, report_date, purchased_asin, attribution_type); dedicated detector + mapper landed in INB-149.' },
 
   // ── Brand Analytics ─────────────────────────────────────────────────────────
   { report_key: 'sqp_weekly', display_name: 'Search Query Performance', source_group: 'Brand Analytics', cadence: 'weekly', pull_period: 'Latest week', target_table: 'search_query_performance', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Weekly from May 2026; table also holds 12 monthly-era periods (May 2025 – Apr 2026).' },
@@ -150,10 +150,10 @@ export function deriveReportKey(
     case 'sp_search_term_report': return byAdType(mappedRows, 'sp_search_term', 'sb_search_term')
     case 'sp_targeting_report':   return byAdType(mappedRows, 'sp_targeting', 'sb_keyword')
 
-    case 'purchased_product_report':
-      // SP export carries an Advertised ASIN column; the SB Attributed Purchases
-      // export does not (it lands with advertised_asin NULL).
-      return { reportKey: hasHeader(headers, 'advertised_asin') ? 'sp_purchased_product' : 'sb_attributed_purchases' }
+    // INB-149: the detector now separates the two purchased-product files, so the
+    // report_key is by report type (no header probe needed).
+    case 'purchased_product_report': return { reportKey: 'sp_purchased_product' }
+    case 'sb_attributed_purchases':  return { reportKey: 'sb_attributed_purchases' }
 
     case 'search_query_performance':       return { reportKey: 'sqp_weekly' }
     case 'brand_analytics_customer_loyalty': {

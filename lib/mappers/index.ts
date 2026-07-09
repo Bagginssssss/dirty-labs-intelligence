@@ -5,6 +5,7 @@ import { mapSpCampaignPerformance } from './sp-campaign-performance'
 import { mapBusinessReportBatch } from './business-report'
 import { mapBusinessReportDaily } from './business-report-daily'
 import { mapPurchasedProduct } from './purchased-product'
+import { mapSbAttributedPurchases } from './sb-attributed-purchases'
 import { mapScaleInsightsBidLog } from './scale-insights-bid-log'
 import { mapScaleInsightsKeywordRank } from './scale-insights-keyword-rank'
 import { mapScaleInsightsRuleChangeLog } from './scale-insights-rule-change-log'
@@ -49,6 +50,7 @@ const MAPPERS: Record<string, MapperFn> = {
 const BATCH_MAPPERS: Record<string, BatchMapperFn> = {
   // business_report groups multi-SKU rows per child ASIN before insert (INB-108).
   business_report:                       mapBusinessReportBatch,
+  sb_attributed_purchases:               mapSbAttributedPurchases,
   smartscout_subcategory_products:       mapSmartscoutSubcategoryProducts,
   virtual_bundle_sales_snapshots:        mapVirtualBundleSnapshots,
   brand_analytics_customer_loyalty:      mapBrandAnalyticsCustomerLoyalty,
@@ -69,6 +71,7 @@ export * from './sp-campaign-performance'
 export * from './business-report'
 export * from './business-report-daily'
 export * from './purchased-product'
+export * from './sb-attributed-purchases'
 export * from './scale-insights-bid-log'
 export * from './scale-insights-keyword-rank'
 export * from './scale-insights-rule-change-log'

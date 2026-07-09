@@ -16,7 +16,8 @@ if (result.status === 'unavailable') {
 }
 
 if (result.status === 'ok') {
-  console.log(`OK — all ${result.tables_checked} configured upsert conflict keys have a matching UNIQUE constraint:`)
+  console.log(`OK — all ${result.tables_checked} configured upsert conflict keys have a matching UNIQUE constraint,`)
+  console.log(`     and no non-allowlisted unique constraint contains a nullable column:`)
   for (const [table, key] of Object.entries(ALL_UPSERT_CONFLICT_KEYS)) {
     console.log(`  ✓ ${table} (${key})`)
   }
@@ -26,5 +27,8 @@ if (result.status === 'ok') {
 console.error(`VIOLATIONS — ${result.message}`)
 for (const v of result.violations) {
   console.error(`  ✗ ${v.table}: configured (${v.configuredKey}) — ${v.reason}`)
+}
+for (const v of result.nullableKeyViolations ?? []) {
+  console.error(`  ✗ ${v.table}: nullable key column(s) ${v.nullableColumns.join(',')} — ${v.reason}`)
 }
 process.exit(1)

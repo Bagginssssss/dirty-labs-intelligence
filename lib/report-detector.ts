@@ -152,6 +152,15 @@ const SIGNATURES: Array<{
       lacks(h, 'viewable_impressions'),
   },
   {
+    // SB Attributed Purchases (INB-149) — shares purchased_product_report with the
+    // SP export. Unique markers: "Attribution type" + the 14-day columns, and NO
+    // "Advertised SKU"/7-day Other-SKU columns. MUST precede the SP signature (both
+    // carry "Purchased ASIN"); the SP file has Advertised SKU, this one does not.
+    reportType: 'sb_attributed_purchases',
+    tableName: 'purchased_product_report',
+    match: h => has(h, 'attribution_type') && has(h, 'purchased_asin') && lacks(h, 'advertised_sku'),
+  },
+  {
     reportType: 'purchased_product_report',
     tableName: 'purchased_product_report',
     match: h => has(h, 'purchased_asin') || (has(h, 'advertised_asin') && has(h, 'purchased_title')),
