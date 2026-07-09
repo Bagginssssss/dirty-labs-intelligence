@@ -1,6 +1,7 @@
 import { parseCSV, decodeFileContent } from '@/lib/csv-parser'
 import { partitionRequiredNotNull, periodDatesError, dedupeByConflictKey } from '@/lib/ingest-validation'
 import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
+import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
@@ -243,6 +244,7 @@ export async function POST(request: Request) {
   let dateRangeEnd = ''
   let actualDateStart: string | null = null
   let actualDateEnd: string | null = null
+  let reportKey: string | null = null
   const ingestErrors: string[] = []
 
   try {
@@ -342,6 +344,15 @@ export async function POST(request: Request) {
         : 'sp_campaign_performance__sb';
     }
 
+    // Tag this upload at the true-report level (INB-145). Ambiguous files
+    // (mixed ad_type, multiple subcategories/ASINs, non-weekly loyalty, unmapped
+    // type) derive null + a warning — logged NULL, never guessed.
+    const derivedKey = deriveReportKey(effectiveReportType, parseResult.headers, mappedRows as Record<string, unknown>[]);
+    reportKey = derivedKey.reportKey;
+    if (derivedKey.warning) {
+      console.warn(`[ingest] report_key not derived for ${effectiveReportType}: ${derivedKey.warning}`);
+    }
+
     // 4. Resolve FK references (campaigns, ad_groups, asins)
     const { resolved, rejected: fkRejected } = await resolveRows(mappedRows, reportType, brandId)
     rowsRejected += fkRejected
@@ -433,6 +444,7 @@ export async function POST(request: Request) {
     await supabaseAdmin.from('report_ingestion_log').insert({
       brand_id: brandId,
       report_type: effectiveReportType,
+      report_key: reportKey,
       source_platform: 'csv_upload',
       date_range_start: dateRangeStart || actualDateStart || null,
       date_range_end:   dateRangeEnd   || actualDateEnd   || null,
@@ -493,6 +505,7 @@ export async function POST(request: Request) {
         await supabaseAdmin.from('report_ingestion_log').insert({
           brand_id: brandId,
           report_type: effectiveReportType,
+          report_key: reportKey,
           source_platform: 'csv_upload',
           date_range_start: dateRangeStart || actualDateStart || null,
           date_range_end:   dateRangeEnd   || actualDateEnd   || null,
