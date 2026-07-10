@@ -13,7 +13,7 @@
 // ingested values.
 export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   scale_insights_keyword_rank: 'brand_id,asin_id,keyword,report_date',
-  scale_insights_bid_log:      'brand_id,campaign_id,target,change_timestamp,bid_before,bid_after',
+  scale_insights_bid_log:      'brand_id,campaign_id,ad_group_id,change_timestamp,target,rule_name,change_value',
   business_report:             'brand_id,asin_id,report_date',
   business_report_daily:       'brand_id,report_date',
   sp_campaign_performance:     'brand_id,campaign_id,report_date,ad_type',
@@ -56,7 +56,8 @@ export const ALL_UPSERT_CONFLICT_KEYS: Record<string, string> = {
 // purchased_product_report is deliberately ABSENT — migration 042 fixed it, so it
 // must stay clean or the checker fails.
 export const NULLABLE_KEY_ALLOWLIST: Record<string, string> = {
-  scale_insights_bid_log:        'URGENT — 7,438 NULL-key rows, 2,213 excess dupes (2026-07-09); same defect class actively duplicating. Remediation: INB-150.',
+  // scale_insights_bid_log removed — remediated by INB-150 (key rebuilt on
+  // change_value; migrations 043/044). It is now ENFORCED by the checker.
   scale_insights_keyword_rank:   'latent — 0 NULL-key rows, 0 dupes; harden with NOT NULL DEFAULT. Housekeeping: INB-151.',
   smartscout_subcategory_brands: 'latent — 0 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
   sp_campaign_performance:       'latent — 0 NULL-key rows (ad_type always set), 0 dupes. Housekeeping: INB-151.',

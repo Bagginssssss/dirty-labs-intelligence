@@ -212,6 +212,14 @@ Surface these whenever a change could affect ingest or metrics:
 - Per-period row counts are as expected (no silent halving/collapse).
 - No NULLs in required columns; no unexpected duplicates on natural keys.
 
+### Repair-script ordering (NULL-key dedup playbook — INB-148/149/150)
+When a repair NULL-normalizes a column (`NULL→''`) that sits inside a still-live UNIQUE
+constraint, the normalization can collide a `NULL` row with an existing `''` twin under the
+OLD key and roll back the whole statement (hit in INB-150). Order it so this can't happen:
+normalize the key column only AFTER the keep-one dedupe (group with `COALESCE(col,'')` so
+NULL/'' twins collapse together), OR drop the old constraint first. The key-swap migration
+should likewise `DROP CONSTRAINT` before any `NULL→''` backfill.
+
 ### QC note (post to the Linear ticket on completion)
 - Commit SHA + branch
 - Files changed

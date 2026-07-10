@@ -163,13 +163,15 @@ test('nullable-key checker: allowlisted table is not flagged; empty nullable set
   )
 })
 
-test('nullable-key allowlist: the 7 reconciled tables are present, purchased_product_report is NOT', async () => {
+test('nullable-key allowlist: the remaining latent tables are present; fixed tables are NOT', async () => {
   const { NULLABLE_KEY_ALLOWLIST } = await import('../lib/upsert-config.ts')
-  for (const t of ['scale_insights_bid_log', 'scale_insights_keyword_rank', 'smartscout_subcategory_brands',
+  // scale_insights_bid_log was remediated by INB-150 → removed from the allowlist.
+  for (const t of ['scale_insights_keyword_rank', 'smartscout_subcategory_brands',
     'sp_campaign_performance', 'sp_search_term_report', 'sp_targeting_report', 'subscribe_and_save']) {
     assert.ok(t in NULLABLE_KEY_ALLOWLIST, `${t} allowlisted`)
   }
-  assert.ok(!('purchased_product_report' in NULLABLE_KEY_ALLOWLIST), 'fixed table not allowlisted')
+  assert.ok(!('purchased_product_report' in NULLABLE_KEY_ALLOWLIST), 'fixed table (INB-149) not allowlisted')
+  assert.ok(!('scale_insights_bid_log' in NULLABLE_KEY_ALLOWLIST), 'fixed table (INB-150) not allowlisted')
 })
 
 // ---------------------------------------------------------------------------

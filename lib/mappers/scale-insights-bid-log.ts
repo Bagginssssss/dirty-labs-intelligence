@@ -7,11 +7,14 @@ export interface ScaleInsightsBidLogRow extends MappedRow {
   _ad_group_amazon_id: string
   _ad_group_name: string
   change_timestamp: string | null
-  target: string | null
+  // INB-150: '' -normalized — target and rule_name are NOT NULL key columns.
+  target: string
   match_type: string | null
   bid_before: number | null
   bid_after: number | null
-  rule_name: string | null
+  rule_name: string
+  // INB-150: NULL-proof key column — canonical bid transition, '' for pauses.
+  change_value: string
   rule_trigger: string | null
   change_reason: string | null
   // Added by migration 016
@@ -21,6 +24,16 @@ export interface ScaleInsightsBidLogRow extends MappedRow {
   code: string | null
   details: string | null
   criteria: string | null
+}
+
+// Canonical bid transition for the NULL-proof key (INB-150): "<before> -> <after>"
+// at 2 decimals, '' when there is no bid change (pause rows have both NULL). Produced
+// identically here and in the SQL backfill (to_char(x,'FM999999990.00')) so re-uploads
+// are idempotent. One-sided transitions are encoded (never collapsed to '') so a
+// malformed "1.77 ->" is not silently dropped.
+export function formatBidChange(before: number | null, after: number | null): string {
+  if (before === null && after === null) return ''
+  return `${before !== null ? before.toFixed(2) : ''} -> ${after !== null ? after.toFixed(2) : ''}`
 }
 
 export function mapScaleInsightsBidLog(row: RawRow, brandId: string): ScaleInsightsBidLogRow {
@@ -62,13 +75,15 @@ export function mapScaleInsightsBidLog(row: RawRow, brandId: string): ScaleInsig
 
     change_timestamp,
 
-    target:      get(null as unknown as string, 'Keyword', 'keyword', 'Target', 'target') || null,
+    // '' -normalized (NOT NULL key columns as of migration 044).
+    target:      get('', 'Keyword', 'keyword', 'Target', 'target'),
     match_type:  null,  // not present in Scale Insights bid log export
 
     bid_before,
     bid_after,
+    change_value: formatBidChange(bid_before, bid_after),
 
-    rule_name:     get(null as unknown as string, 'Rule',     'rule_name')     || null,
+    rule_name:     get('', 'Rule', 'rule_name'),
     rule_trigger:  criteriaVal,
     change_reason: get(null as unknown as string, 'Action',   'change_reason') || null,
 

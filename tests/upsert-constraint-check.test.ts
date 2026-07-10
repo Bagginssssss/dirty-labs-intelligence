@@ -27,7 +27,7 @@ const STATE_C_INDEXES = [
 // this test failing is the loud signal that the migration must ship the constraint.
 const CURRENT_DB_INDEXES = [
   { table_name: 'scale_insights_keyword_rank', index_name: 'uq_keyword_rank', columns: ['brand_id', 'asin_id', 'keyword', 'report_date'] },
-  { table_name: 'scale_insights_bid_log', index_name: 'uq_bid_log', columns: ['brand_id', 'campaign_id', 'target', 'change_timestamp', 'bid_before', 'bid_after'] },
+  { table_name: 'scale_insights_bid_log', index_name: 'uq_bid_log', columns: ['brand_id', 'campaign_id', 'ad_group_id', 'change_timestamp', 'target', 'rule_name', 'change_value'] },
   { table_name: 'business_report', index_name: 'uq_business_report', columns: ['brand_id', 'asin_id', 'report_date'] },
   { table_name: 'business_report_daily', index_name: 'uq_business_report_daily', columns: ['brand_id', 'report_date'] },
   { table_name: 'sp_campaign_performance', index_name: 'uq_campaign_performance', columns: ['brand_id', 'campaign_id', 'report_date', 'ad_type'] },
