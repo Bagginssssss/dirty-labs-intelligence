@@ -47,6 +47,7 @@ const CURRENT_DB_INDEXES = [
   { table_name: 'platform_knowledge', index_name: 'uq_platform_knowledge', columns: ['brand_id', 'category', 'key'] },
   { table_name: 'scale_insights_rule_change_log', index_name: 'scale_insights_rule_change_log_natural_key', columns: ['brand_id', 'created_date', 'log_type', 'campaign', 'ad_group', 'keyword_or_target', 'rule_name', 'change_value'] },
   { table_name: 'scale_insights_rule_assignments', index_name: 'scale_insights_rule_assignments_natural_key', columns: ['brand_id', 'snapshot_date', 'campaign', 'ad_group'] },
+  { table_name: 'report_coverage', index_name: 'uq_report_coverage', columns: ['report_key', 'period_start'] },
 ]
 
 // ---------------------------------------------------------------------------

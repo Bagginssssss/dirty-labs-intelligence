@@ -8,6 +8,7 @@ import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
 import { periodStart } from '@/lib/upload-tracker/gaps'
 import { UPSERT_CONFLICT_KEYS } from '@/lib/upsert-config'
 import { calculateDerivedMetricsRange, recalcPlanForUpload } from '@/lib/derived-metrics'
+import { upsertCoverageForUpload } from '@/lib/coverage/maintain'
 
 const BATCH_SIZE = 500
 
@@ -466,6 +467,15 @@ export async function POST(request: Request) {
       error_message: ingestErrors.length ? ingestErrors.join(' | ') : null,
       ingestion_method: 'csv_upload',
     })
+
+    // 6b. Maintain report_coverage for the periods this upload touched (INB-146).
+    // Derived metadata — a coverage failure must NEVER fail an ingest that already
+    // stored + logged. Awaited but non-fatal: log loudly and move on.
+    try {
+      await upsertCoverageForUpload({ reportKey, tableName, rows: uniqueRows })
+    } catch (e) {
+      console.error(`[ingest] report_coverage maintenance failed for ${reportKey ?? '(null key)'}: ${(e as Error).message}`)
+    }
 
     // 7. Auto-recalc derived metrics for the covered window (INB-86). Feeder
     // tables only; fully-rejected uploads changed nothing, so skip those too.

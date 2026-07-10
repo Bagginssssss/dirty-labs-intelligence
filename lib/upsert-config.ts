@@ -35,6 +35,8 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   // are re-uploaded weekly. Both dedup on their natural key (migration 039).
   scale_insights_rule_change_log:  'brand_id,created_date,log_type,campaign,ad_group,keyword_or_target,rule_name,change_value',
   scale_insights_rule_assignments: 'brand_id,snapshot_date,campaign,ad_group',
+  // INB-146 — derived coverage, upserted post-upload (maintain.ts) + by the backfill.
+  report_coverage:                 'report_key,period_start',
 }
 
 // Everything the constraint checker must cover: the ingest map above PLUS conflict

@@ -13,7 +13,7 @@ export type GapAnalysis = {
   coverageEnd: string | null;
 };
 
-function addDays(isoDate: string, n: number): string {
+export function addDays(isoDate: string, n: number): string {
   const d = new Date(isoDate + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
@@ -35,7 +35,7 @@ function inclusiveDays(start: string, end: string): number {
   return Math.floor(ms / 86_400_000) + 1;
 }
 
-function daysBetween(a: string, b: string): number {
+export function daysBetween(a: string, b: string): number {
   return Math.round(
     (new Date(b + 'T00:00:00Z').getTime() - new Date(a + 'T00:00:00Z').getTime()) / 86_400_000,
   );
@@ -132,7 +132,7 @@ function monthRangeFromYMs(startYM: string, endYM: string): GapRange {
 // Cutover heuristic: the first date after the last inter-date gap > 14 days.
 // All-weekly data (customer_loyalty, etc.) has cutover = 0 → pure weekly path.
 
-function findWeeklyCutover(sorted: string[]): number {
+export function findWeeklyCutover(sorted: string[]): number {
   const MONTHLY_THRESHOLD = 14;
 
   // Fast path: no small gap anywhere → pure-monthly dataset.
