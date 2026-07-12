@@ -24,11 +24,11 @@ export function ReportTile({ tile, onClick }: { tile: TileVM; onClick: () => voi
       ) : (
         <>
           <div className="flex items-center justify-between mt-2 text-[9px]">
-            <span className="text-[#64748b]">{tile.latestPeriodLabel ?? '—'}</span>
-            <span className="text-[#475569]">{relTimeLabel(tile.lastUploadAt, today)}</span>
+            <span className="text-[#64748b]">{tile.periodLine}</span>
+            <span className="text-[#475569]">Last upload: {relTimeLabel(tile.lastUploadAt, today)}</span>
           </div>
-          {tile.notes && (
-            <div className="text-[8px] text-[#475569] mt-1.5 leading-snug line-clamp-2">{tile.notes}</div>
+          {tile.eventDriven && (
+            <div className="text-[8px] text-[#f59e0b] mt-1.5 leading-snug">⚠ Rolling export — don&apos;t skip weeks</div>
           )}
           <CoverageStrip cells={tile.strip} />
         </>

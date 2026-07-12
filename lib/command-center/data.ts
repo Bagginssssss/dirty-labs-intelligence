@@ -10,7 +10,7 @@ import { unstable_cache } from 'next/cache'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { addDays } from '@/lib/upload-tracker/gaps'
 import { COVERAGE_CONFIG } from '@/lib/coverage/config'
-import { assembleCommandCenter, buildStrip, deriveStatus } from './status'
+import { COVERAGE_WINDOW_DAYS, assembleCommandCenter, buildStrip, deriveStatus, freshnessLine } from './status'
 import type { CommandCenterVM, CoverageEnd, ReportDetail, TileVM } from './types'
 
 type RegistryRowDb = {
@@ -25,8 +25,6 @@ type RegistryRowDb = {
   notes: string | null
 }
 type CoverageRowDb = { report_key: string; period_end: string; period_label: string; period_type: 'weekly' | 'monthly' | 'snapshot'; data_through: string | null }
-
-const COVERAGE_WINDOW_DAYS = 182 // ~26 weeks: covers the 8-week strip + latest for every active report
 
 async function _load(brandId: string, today: string): Promise<CommandCenterVM> {
   const cutoff = addDays(today, -COVERAGE_WINDOW_DAYS)
@@ -96,6 +94,14 @@ async function _load(brandId: string, today: string): Promise<CommandCenterVM> {
       status,
       latestPeriodLabel: latest?.period_label ?? null,
       latestPeriodEnd: latest?.period_end ?? null,
+      latestDataThrough: latest?.data_through ?? null,
+      periodLine: freshnessLine({
+        mode,
+        coveringWindowDays: cfg?.coveringWindowDays ?? null,
+        latestPeriodEnd: latest?.period_end ?? null,
+        latestPeriodLabel: latest?.period_label ?? null,
+        latestDataThrough: latest?.data_through ?? null,
+      }),
       lastUploadAt,
       strip: r.is_active && mode ? buildStrip({ mode, eventDriven, coverageEnds, today }) : [],
     }

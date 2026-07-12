@@ -19,6 +19,9 @@ export type CoverageTableConfig = {
   periodColumn: string
   mode: CoverageMode
   eventDriven: boolean
+  // Covering-window reports (S&S): each snapshot represents a rolling window of this many
+  // days from its date. Drives the tile's "Window X → Y" copy (INB-147). Absent = a point.
+  coveringWindowDays?: number
 }
 
 export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
@@ -30,7 +33,7 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   // Seller Central
   business_report:                  { periodColumn: 'report_date',     mode: 'monthly',  eventDriven: false },
   business_report_daily:            { periodColumn: 'report_date',     mode: 'weekly',   eventDriven: false },
-  subscribe_and_save:               { periodColumn: 'report_date',     mode: 'snapshot', eventDriven: false },
+  subscribe_and_save:               { periodColumn: 'report_date',     mode: 'snapshot', eventDriven: false, coveringWindowDays: 30 },
   virtual_bundle_sales_snapshots:   { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
   virtual_bundle_sales_daily:       { periodColumn: 'sale_date',       mode: 'weekly',   eventDriven: false },
   // Brand Analytics — weekly Saturday anchors (SQP is mixed-cadence: monthly era + weekly)

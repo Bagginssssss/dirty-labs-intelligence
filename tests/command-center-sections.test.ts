@@ -8,8 +8,8 @@ function tile(o: Partial<TileVM> & Pick<TileVM, 'reportKey' | 'sourceGroup' | 's
   return {
     displayName: o.reportKey, cadence: 'weekly', pullPeriod: null, targetTable: 't',
     isActive: o.status !== 'planned', eventDriven: false, notes: null,
-    latestPeriodLabel: null, latestPeriodEnd: null, lastUploadAt: null, strip: [],
-    sortOrder: 1, ...o,
+    latestPeriodLabel: null, latestPeriodEnd: null, latestDataThrough: null, periodLine: '—',
+    lastUploadAt: null, strip: [], sortOrder: 1, ...o,
   } as TileVM
 }
 

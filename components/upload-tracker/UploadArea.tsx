@@ -6,6 +6,7 @@ import { refreshTrackerCache } from '@/app/upload/actions'
 import { parseCSV, decodeFileContent } from '@/lib/csv-parser'
 import { detectReportType } from '@/lib/report-detector'
 import { requiresPeriodDates } from '@/lib/ingest-validation'
+import { COVERAGE_CONFIG } from '@/lib/coverage/config'
 
 interface IngestResult {
   status: string
@@ -47,7 +48,15 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
       const parsed = parseCSV(content)
       // Pass the first data row so content-gated detection (INB-148 rule change
       // logs, which share a header with the bidding-rule log) resolves client-side.
-      setDetectedType(detectReportType(parsed.headers, parsed.rows[0]).reportType)
+      const det = detectReportType(parsed.headers, parsed.rows[0])
+      setDetectedType(det.reportType)
+      // Snapshot-type reports (SmartScout, rule assignments) carry no row dates and were
+      // repeatedly filed under wrong typed dates — default the fields to today (editable).
+      if (COVERAGE_CONFIG[det.tableName]?.mode === 'snapshot') {
+        const today = new Date().toISOString().slice(0, 10)
+        setDateStart(prev => prev || today)
+        setDateEnd(prev => prev || today)
+      }
     } catch {
       // Unreadable header region — leave fields optional; the server still gates.
     }

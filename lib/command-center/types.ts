@@ -26,6 +26,8 @@ export type TileVM = {
   status: TileStatus
   latestPeriodLabel: string | null
   latestPeriodEnd: string | null
+  latestDataThrough: string | null
+  periodLine: string // rendered freshness/window line for the tile face (INB-147 QC2)
   lastUploadAt: string | null // ISO timestamp of latest tagged ingestion-log event, else null
   strip: StripCell[]
 }

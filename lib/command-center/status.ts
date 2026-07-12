@@ -41,6 +41,12 @@ export const STATUS_CONFIG = {
   eventDriven: { freshDays: 8, dueMaxDaysPast: 4 },
 } as const
 
+// Bounded coverage-load window for the tile grid. Must reach back far enough for the
+// widest strip — the 8-month monthly strip (business_report) needs ~9 months; 320 days
+// covers it + the 12-week detail with margin. (The detail panel loads full per-report
+// history separately, so this only bounds the grid.)
+export const COVERAGE_WINDOW_DAYS = 320
+
 export const SECTION_ORDER = [
   'Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save',
   'Virtual Bundles', 'SmartScout', 'ScaleInsights',
@@ -218,6 +224,23 @@ export function relTimeLabel(iso: string | null, today: string): string {
   if (days < 7) return `${days}d ago`
   const w = Math.floor(days / 7)
   return w === 1 ? '1w ago' : `${w}w ago`
+}
+
+// The tile's "period" line — data-freshness phrasing driven by data_through.
+// Covering-window reports (S&S) show the window; monthly shows the month label (its raw
+// max-source-date is misleading for an aggregate); weekly/snapshot show data_through.
+export function freshnessLine(p: {
+  mode: CoverageMode | undefined
+  coveringWindowDays: number | null
+  latestPeriodEnd: string | null
+  latestPeriodLabel: string | null
+  latestDataThrough: string | null
+}): string {
+  if (p.coveringWindowDays && p.latestPeriodEnd) {
+    return `Window ${p.latestPeriodEnd} → ${addDays(p.latestPeriodEnd, p.coveringWindowDays)}`
+  }
+  if (p.mode === 'monthly') return p.latestPeriodLabel ? `Data through ${p.latestPeriodLabel}` : '—'
+  return p.latestDataThrough ? `Data through ${p.latestDataThrough}` : '—'
 }
 
 // ── sections ─────────────────────────────────────────────────────────────────

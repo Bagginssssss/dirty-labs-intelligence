@@ -50,6 +50,16 @@ test('pending: most-recent expected cell uncovered beyond grace → gap (red)', 
   assert.equal(last.state, 'gap')
 })
 
+test('monthly: 8 months of coverage → 8 filled cells (no false gaps)', () => {
+  // business_report shape: today 2026-07-12 → strip spans Nov 2025 … Jun 2026 (last completed).
+  const monthEnds = ['2025-11-30', '2025-12-31', '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31', '2026-06-30']
+  const coverageEnds = monthEnds.map(periodEnd => ({ periodEnd, periodType: 'monthly' as const, dataThrough: periodEnd }))
+  const strip = buildStrip({ mode: 'monthly', eventDriven: false, coverageEnds, today: '2026-07-12' })
+  assert.equal(strip.length, 8)
+  assert.deepEqual(strip.map(c => c.label), ['2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06'])
+  assert.ok(strip.every(c => c.state === 'filled'), 'all 8 months present → all filled')
+})
+
 test('snapshot_weekly: snapshots bucket into their week; missing weeks neutral', () => {
   // snapshots on 2026-07-01 (→ week ending 07-04) and 2026-06-24 (→ 06-27); others missing → neutral
   const coverageEnds = [

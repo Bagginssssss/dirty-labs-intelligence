@@ -24,3 +24,9 @@ test('modes are valid; event_driven true only for the bid log + rule change logs
     assert.ok(typeof c.periodColumn === 'string' && c.periodColumn.length > 0)
   }
 })
+
+test('covering-window: subscribe_and_save has a 30d window; no other report does', () => {
+  const withWindow = Object.entries(COVERAGE_CONFIG).filter(([, c]) => c.coveringWindowDays != null).map(([t]) => t)
+  assert.deepEqual(withWindow, ['subscribe_and_save'])
+  assert.equal(COVERAGE_CONFIG.subscribe_and_save.coveringWindowDays, 30)
+})

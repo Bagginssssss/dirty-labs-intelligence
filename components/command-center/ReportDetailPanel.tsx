@@ -29,12 +29,14 @@ function eventColor(s: string | null): string {
 export function ReportDetailPanel({ tile, onClose }: { tile: TileVM | null; onClose: () => void }) {
   const [detail, setDetail] = useState<ReportDetail | null>(null)
   const [loading, setLoading] = useState(false)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     if (!tile) {
       setDetail(null)
       return
     }
+    setExpanded(false)
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
@@ -93,7 +95,7 @@ export function ReportDetailPanel({ tile, onClose }: { tile: TileVM | null; onCl
             <Field label="Cadence" value={tile.cadence} />
             <Field label="Pull period" value={tile.pullPeriod ?? '—'} />
             <Field label="Target table" value={tile.targetTable} />
-            <Field label="Latest covered" value={tile.latestPeriodLabel ?? '—'} />
+            <Field label="Latest data" value={tile.periodLine} />
             <Field label="Last upload" value={tile.lastUploadAt ? tile.lastUploadAt.slice(0, 10) : '—'} />
             {tile.eventDriven && <Field label="Event-driven" value="yes — gaps are normal" />}
           </div>
@@ -105,7 +107,7 @@ export function ReportDetailPanel({ tile, onClose }: { tile: TileVM | null; onCl
           {loading && <p className="text-[10px] text-[#475569]">Loading…</p>}
           {!loading && detail && detail.coverage.length > 0 ? (
             <div className="space-y-0.5">
-              {detail.coverage.map((c, i) => {
+              {(expanded ? detail.coverage : detail.coverage.slice(0, 12)).map((c, i) => {
                 const partial = c.periodType === 'weekly' && c.dataThrough !== null && c.dataThrough < c.periodEnd
                 return (
                   <div key={`${c.periodStart}-${i}`} className="flex justify-between gap-4 text-[10px]">
@@ -117,6 +119,14 @@ export function ReportDetailPanel({ tile, onClose }: { tile: TileVM | null; onCl
                   </div>
                 )
               })}
+              {detail.coverage.length > 12 && (
+                <button
+                  onClick={() => setExpanded(v => !v)}
+                  className="text-[9px] text-[#3b82f6] hover:text-[#60a5fa] transition-colors mt-1"
+                >
+                  {expanded ? 'show less' : `show all (${detail.coverage.length})`}
+                </button>
+              )}
             </div>
           ) : (
             !loading && <p className="text-[10px] text-[#475569]">No coverage recorded</p>

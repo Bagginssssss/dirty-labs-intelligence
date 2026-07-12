@@ -7,7 +7,8 @@
 // coverage continuity — their quiet weeks are normal, so gaps never escalate them.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { deriveStatus, relTimeLabel } from '../lib/command-center/status.ts'
+import { deriveStatus, relTimeLabel, freshnessLine, COVERAGE_WINDOW_DAYS } from '../lib/command-center/status.ts'
+import { addDays } from '../lib/upload-tracker/gaps.ts'
 import type { CoverageEnd } from '../lib/command-center/types.ts'
 
 const TODAY = '2026-07-10' // Friday; most recent completed Saturday = 2026-07-04
@@ -126,6 +127,40 @@ test('inactive report → planned (regardless of coverage)', () => {
     deriveStatus({ ...base, isActive: false, cadence: 'weekly', coverageEnds: weeklyEnds('2026-07-04', 8) }),
     'planned',
   )
+})
+
+test('freshnessLine: data_through / month / covering-window / empty', () => {
+  // weekly & snapshot → "Data through {data_through}"
+  assert.equal(
+    freshnessLine({ mode: 'weekly', coveringWindowDays: null, latestPeriodEnd: '2026-07-11', latestPeriodLabel: 'W/E 2026-07-11', latestDataThrough: '2026-07-05' }),
+    'Data through 2026-07-05',
+  )
+  assert.equal(
+    freshnessLine({ mode: 'snapshot', coveringWindowDays: null, latestPeriodEnd: '2026-06-29', latestPeriodLabel: '2026-06-29', latestDataThrough: '2026-06-29' }),
+    'Data through 2026-06-29',
+  )
+  // monthly → the month label (raw max-source-date is misleading for an aggregate)
+  assert.equal(
+    freshnessLine({ mode: 'monthly', coveringWindowDays: null, latestPeriodEnd: '2026-06-30', latestPeriodLabel: '2026-06', latestDataThrough: '2026-06-08' }),
+    'Data through 2026-06',
+  )
+  // covering-window (S&S, 30d) → the window range
+  assert.equal(
+    freshnessLine({ mode: 'snapshot', coveringWindowDays: 30, latestPeriodEnd: '2026-06-03', latestPeriodLabel: '2026-06-03', latestDataThrough: '2026-06-03' }),
+    'Window 2026-06-03 → 2026-07-03',
+  )
+  // no coverage → dash
+  assert.equal(
+    freshnessLine({ mode: 'weekly', coveringWindowDays: null, latestPeriodEnd: null, latestPeriodLabel: null, latestDataThrough: null }),
+    '—',
+  )
+})
+
+test('COVERAGE_WINDOW_DAYS reaches back far enough for an 8-month monthly strip', () => {
+  // today 2026-07-12 → an 8-month strip spans Nov 2025 … Jun 2026; the bounded grid load
+  // must include Nov 2025 (period_end 2025-11-30), i.e. cutoff ≤ 2025-11-01.
+  const cutoff = addDays('2026-07-12', -COVERAGE_WINDOW_DAYS)
+  assert.ok(cutoff <= '2025-11-01', `cutoff ${cutoff} must be ≤ 2025-11-01`)
 })
 
 test('relTimeLabel: calendar-day difference on UTC date parts (not elapsed ms)', () => {
