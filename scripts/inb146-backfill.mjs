@@ -63,7 +63,7 @@ for (const r of active) {
   try {
     const { data, error } = await supabaseAdmin
       .from('report_coverage')
-      .select('period_start,period_end,period_label,period_type,event_driven')
+      .select('period_start,period_end,period_label,period_type,data_through,event_driven')
       .eq('report_key', r.report_key)
     if (error) throw new Error(error.message)
     existing = new Map((data ?? []).map(e => [String(e.period_start).slice(0, 10), e]))
@@ -82,6 +82,7 @@ for (const r of active) {
       period_end: p.period_end,
       period_label: p.period_label,
       period_type: p.period_type,
+      data_through: p.data_through,
       event_driven: cfg.eventDriven,
       source: 'derived',
     }
@@ -91,6 +92,7 @@ for (const r of active) {
       String(e.period_end).slice(0, 10) !== p.period_end ||
       e.period_label !== p.period_label ||
       e.period_type !== p.period_type ||
+      (e.data_through === null ? null : String(e.data_through).slice(0, 10)) !== p.data_through ||
       e.event_driven !== cfg.eventDriven
     ) { nChanged++; toWrite.push(desired) }
     else nUnchanged++

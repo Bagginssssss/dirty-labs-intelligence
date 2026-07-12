@@ -24,7 +24,7 @@ type RegistryRowDb = {
   sort_order: number | null
   notes: string | null
 }
-type CoverageRowDb = { report_key: string; period_end: string; period_label: string; period_type: 'weekly' | 'monthly' | 'snapshot' }
+type CoverageRowDb = { report_key: string; period_end: string; period_label: string; period_type: 'weekly' | 'monthly' | 'snapshot'; data_through: string | null }
 
 const COVERAGE_WINDOW_DAYS = 182 // ~26 weeks: covers the 8-week strip + latest for every active report
 
@@ -39,7 +39,7 @@ async function _load(brandId: string, today: string): Promise<CommandCenterVM> {
       .order('sort_order'),
     supabaseAdmin
       .from('report_coverage')
-      .select('report_key,period_end,period_label,period_type')
+      .select('report_key,period_end,period_label,period_type,data_through')
       .gte('period_end', cutoff),
     supabaseAdmin
       .from('report_ingestion_log')
@@ -73,7 +73,7 @@ async function _load(brandId: string, today: string): Promise<CommandCenterVM> {
     const eventDriven = cfg?.eventDriven ?? false
     const mode = cfg?.mode
     const rows = coverageByKey.get(r.report_key) ?? []
-    const coverageEnds: CoverageEnd[] = rows.map(c => ({ periodEnd: c.period_end, periodType: c.period_type }))
+    const coverageEnds: CoverageEnd[] = rows.map(c => ({ periodEnd: c.period_end, periodType: c.period_type, dataThrough: c.data_through }))
     const lastUploadAt = lastUploadByKey.get(r.report_key) ?? null
 
     const latest = rows.reduce<CoverageRowDb | null>((m, c) => (m === null || c.period_end > m.period_end ? c : m), null)
@@ -117,7 +117,7 @@ export async function loadReportDetail(brandId: string, reportKey: string): Prom
   const [coverageRes, eventsRes] = await Promise.all([
     supabaseAdmin
       .from('report_coverage')
-      .select('period_start,period_end,period_label,period_type')
+      .select('period_start,period_end,period_label,period_type,data_through')
       .eq('report_key', reportKey)
       .order('period_end', { ascending: false }),
     supabaseAdmin
@@ -133,7 +133,7 @@ export async function loadReportDetail(brandId: string, reportKey: string): Prom
 
   return {
     coverage: (coverageRes.data ?? []).map(c => ({
-      periodStart: c.period_start, periodEnd: c.period_end, periodLabel: c.period_label, periodType: c.period_type,
+      periodStart: c.period_start, periodEnd: c.period_end, periodLabel: c.period_label, periodType: c.period_type, dataThrough: c.data_through,
     })),
     events: (eventsRes.data ?? []).map(e => ({
       ingestedAt: e.ingested_at, status: e.status, rowsStored: e.rows_stored,

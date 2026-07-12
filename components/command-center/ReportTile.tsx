@@ -1,22 +1,13 @@
 'use client'
 
 import type { TileVM } from '@/lib/command-center/types'
-import { STATUS_COLORS } from '@/lib/command-center/status'
+import { STATUS_COLORS, relTimeLabel } from '@/lib/command-center/status'
 import { CoverageStrip } from './CoverageStrip'
 import { StatusBadge } from './StatusBadge'
 
-function relTime(iso: string | null): string {
-  if (!iso) return '—'
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
-  if (days <= 0) return 'today'
-  if (days === 1) return '1d ago'
-  if (days < 7) return `${days}d ago`
-  const w = Math.floor(days / 7)
-  return w === 1 ? '1w ago' : `${w}w ago`
-}
-
 export function ReportTile({ tile, onClick }: { tile: TileVM; onClick: () => void }) {
   const planned = tile.status === 'planned'
+  const today = new Date().toISOString().slice(0, 10)
   return (
     <button
       onClick={onClick}
@@ -34,7 +25,7 @@ export function ReportTile({ tile, onClick }: { tile: TileVM; onClick: () => voi
         <>
           <div className="flex items-center justify-between mt-2 text-[9px]">
             <span className="text-[#64748b]">{tile.latestPeriodLabel ?? '—'}</span>
-            <span className="text-[#475569]">{relTime(tile.lastUploadAt)}</span>
+            <span className="text-[#475569]">{relTimeLabel(tile.lastUploadAt, today)}</span>
           </div>
           {tile.notes && (
             <div className="text-[8px] text-[#475569] mt-1.5 leading-snug line-clamp-2">{tile.notes}</div>

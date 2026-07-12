@@ -32,7 +32,9 @@ export const STATUS_LABELS: Record<TileStatus, string> = {
 // not the registry cadence string — e.g. rule_assignments has cadence 'weekly' but
 // snapshot-grade coverage, so it uses snapshot recency, not weekly-Saturday membership.
 export const STATUS_CONFIG = {
-  weekly: { dueMaxDaysPast: 3 }, // overdue once ≥4 days past the completed Saturday (≈Wed)
+  // dataToleranceDays: the expected week counts fully pulled if data_through reaches
+  // within this many days of its Saturday (1 = through-Friday still current).
+  weekly: { dueMaxDaysPast: 3, dataToleranceDays: 1 }, // overdue once ≥4 days past the completed Saturday (≈Wed)
   monthly: { dueMaxDaysPast: 6 },
   snapshotWeekly: { freshDays: 8, dueMaxDaysPast: 4 }, // weekly/snapshot_weekly cadence snapshots
   snapshotMonthly: { freshDays: 35, dueMaxDaysPast: 10 }, // monthly-cadence snapshots (e.g. S&S)
@@ -130,15 +132,26 @@ export function deriveStatus(p: {
     return recencyStatus(latestEnd, p.today, cfg)
   }
 
-  // weekly mode (default): the completed Saturday must be covered, no interior hole.
+  // weekly mode (default): status is driven by the LAST fully-pulled completed week
+  // (data_through ≥ its Saturday − tolerance), not just the newest expected week — so a
+  // report that missed an older week reads overdue even when the newest week is barely
+  // past. current = last-full reaches the expected week (with no interior hole); else
+  // due/overdue by how long the FIRST owed week (last-full + 7) has been outstanding.
   const expected = mostRecentSaturday(p.today)
-  const sats = new Set(p.coverageEnds.filter(e => e.periodType === 'weekly').map(e => e.periodEnd))
-  if (!sats.has(expected)) {
-    const daysPast = daysBetween(expected, p.today)
-    return daysPast <= STATUS_CONFIG.weekly.dueMaxDaysPast ? 'due' : 'overdue'
+  const tol = STATUS_CONFIG.weekly.dataToleranceDays
+  const weekly = p.coverageEnds.filter(e => e.periodType === 'weekly')
+  const sats = new Set(weekly.map(e => e.periodEnd))
+  const fullSats = weekly
+    .filter(e => e.periodEnd <= expected && e.dataThrough != null && e.dataThrough >= addDays(e.periodEnd, -tol))
+    .map(e => e.periodEnd)
+  const lastFull = fullSats.length ? fullSats.reduce((a, b) => (a > b ? a : b)) : null
+
+  if (lastFull === expected) {
+    return hasRecentHole(sats, expected, 8) ? 'overdue' : 'current'
   }
-  if (hasRecentHole(sats, expected, 8)) return 'overdue'
-  return 'current'
+  const owed = lastFull ? addDays(lastFull, 7) : expected // first completed week still owed
+  const daysPast = daysBetween(owed, p.today)
+  return daysPast <= STATUS_CONFIG.weekly.dueMaxDaysPast ? 'due' : 'overdue'
 }
 
 // ── strip ────────────────────────────────────────────────────────────────────
@@ -156,6 +169,21 @@ function monthlyStrip(coverageEnds: CoverageEnd[], eventDriven: boolean, today: 
   return cells
 }
 
+function weekCells(coverageEnds: CoverageEnd[], eventDriven: boolean, mode: CoverageMode, today: string, n: number): StripCell[] {
+  const covered = new Set<string>()
+  for (const e of coverageEnds) covered.add(e.periodType === 'weekly' ? e.periodEnd : weekEndSaturday(e.periodEnd))
+  const missing: StripCellState = eventDriven || mode === 'snapshot' ? 'neutral' : 'gap'
+  const cells: StripCell[] = []
+  const d = new Date(mostRecentSaturday(today) + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() - 7 * (n - 1))
+  for (let i = 0; i < n; i++) {
+    const s = d.toISOString().slice(0, 10)
+    cells.push({ periodEnd: s, label: `W/E ${s}`, state: covered.has(s) ? 'filled' : missing })
+    d.setUTCDate(d.getUTCDate() + 7)
+  }
+  return cells
+}
+
 export function buildStrip(p: {
   mode: CoverageMode
   eventDriven: boolean
@@ -164,23 +192,32 @@ export function buildStrip(p: {
   n?: number
 }): StripCell[] {
   const n = p.n ?? 8
-  if (p.mode === 'monthly') return monthlyStrip(p.coverageEnds, p.eventDriven, p.today, n)
+  const cells =
+    p.mode === 'monthly'
+      ? monthlyStrip(p.coverageEnds, p.eventDriven, p.today, n)
+      : weekCells(p.coverageEnds, p.eventDriven, p.mode, p.today, n)
 
-  // week-based (weekly / snapshot / event-driven weekly)
-  const covered = new Set<string>()
-  for (const e of p.coverageEnds) {
-    covered.add(e.periodType === 'weekly' ? e.periodEnd : weekEndSaturday(e.periodEnd))
-  }
-  const missing: StripCellState = p.eventDriven || p.mode === 'snapshot' ? 'neutral' : 'gap'
-  const cells: StripCell[] = []
-  const d = new Date(mostRecentSaturday(p.today) + 'T00:00:00Z')
-  d.setUTCDate(d.getUTCDate() - 7 * (n - 1))
-  for (let i = 0; i < n; i++) {
-    const s = d.toISOString().slice(0, 10)
-    cells.push({ periodEnd: s, label: `W/E ${s}`, state: covered.has(s) ? 'filled' : missing })
-    d.setUTCDate(d.getUTCDate() + 7)
+  // Publication lag: the most-recent expected cell, when uncovered but still within the
+  // due grace, reads as pending (awaiting), not a red gap — matches the due status.
+  const last = cells[cells.length - 1]
+  if (last && last.state === 'gap') {
+    const grace = p.mode === 'monthly' ? STATUS_CONFIG.monthly.dueMaxDaysPast : STATUS_CONFIG.weekly.dueMaxDaysPast
+    if (daysBetween(last.periodEnd, p.today) <= grace) last.state = 'pending'
   }
   return cells
+}
+
+// ── freshness ────────────────────────────────────────────────────────────────
+// Relative "last upload" label by CALENDAR-day difference on the UTC date parts (not
+// elapsed ms), so a 2026-07-09 20:42 UTC upload reads "3d ago" on 2026-07-12, not "2d".
+export function relTimeLabel(iso: string | null, today: string): string {
+  if (!iso) return '—'
+  const days = daysBetween(iso.slice(0, 10), today)
+  if (days <= 0) return 'today'
+  if (days === 1) return '1d ago'
+  if (days < 7) return `${days}d ago`
+  const w = Math.floor(days / 7)
+  return w === 1 ? '1w ago' : `${w}w ago`
 }
 
 // ── sections ─────────────────────────────────────────────────────────────────

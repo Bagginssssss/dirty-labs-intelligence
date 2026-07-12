@@ -97,28 +97,33 @@ export function ReportDetailPanel({ tile, onClose }: { tile: TileVM | null; onCl
             <Field label="Last upload" value={tile.lastUploadAt ? tile.lastUploadAt.slice(0, 10) : '—'} />
             {tile.eventDriven && <Field label="Event-driven" value="yes — gaps are normal" />}
           </div>
+          <p className="text-[9px] text-[#475569] mt-2">Per-report upload tagging began 2026-07-09; earlier uploads show “—”.</p>
           {tile.notes && <p className="text-[9px] text-[#475569] mt-2 leading-relaxed">{tile.notes}</p>}
 
-          {/* Coverage timeline */}
-          <SectionLabel>COVERAGE TIMELINE</SectionLabel>
+          {/* Coverage timeline — which periods have data */}
+          <SectionLabel>DATA PRESENT</SectionLabel>
           {loading && <p className="text-[10px] text-[#475569]">Loading…</p>}
           {!loading && detail && detail.coverage.length > 0 ? (
             <div className="space-y-0.5">
-              {detail.coverage.map((c, i) => (
-                <div key={`${c.periodStart}-${i}`} className="flex justify-between gap-4 text-[10px]">
-                  <span className="text-[#94a3b8]">{c.periodLabel}</span>
-                  <span className="text-[#475569]">
-                    {c.periodStart} → {c.periodEnd} · {c.periodType}
-                  </span>
-                </div>
-              ))}
+              {detail.coverage.map((c, i) => {
+                const partial = c.periodType === 'weekly' && c.dataThrough !== null && c.dataThrough < c.periodEnd
+                return (
+                  <div key={`${c.periodStart}-${i}`} className="flex justify-between gap-4 text-[10px]">
+                    <span className="text-[#94a3b8]">{c.periodLabel}</span>
+                    <span className="text-[#475569]">
+                      {c.periodStart} → {c.periodEnd} · {c.periodType}
+                      {partial && <span style={{ color: '#f59e0b' }}> · through {c.dataThrough}</span>}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           ) : (
             !loading && <p className="text-[10px] text-[#475569]">No coverage recorded</p>
           )}
 
-          {/* Upload events */}
-          <SectionLabel>UPLOAD EVENTS</SectionLabel>
+          {/* Upload history — tagged ingestion events for this report_key */}
+          <SectionLabel>UPLOAD HISTORY</SectionLabel>
           {!loading && detail && detail.events.length > 0 ? (
             <div className="space-y-1.5">
               {detail.events.map((e, i) => (

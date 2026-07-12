@@ -1,36 +1,65 @@
 // INB-147 — coverage-driven tile status derivation (pure).
 //
 // Status is computed from registry cadence + report_coverage (never source tables).
+// A weekly report is CURRENT only when the expected week is present AND fully pulled
+// (data_through ≥ its Saturday − tolerance); a partial week falls to due/overdue.
 // Event-driven reports (bid log + rule change logs) key off UPLOAD RECENCY, not
 // coverage continuity — their quiet weeks are normal, so gaps never escalate them.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { deriveStatus } from '../lib/command-center/status.ts'
+import { deriveStatus, relTimeLabel } from '../lib/command-center/status.ts'
+import type { CoverageEnd } from '../lib/command-center/types.ts'
 
 const TODAY = '2026-07-10' // Friday; most recent completed Saturday = 2026-07-04
 
-// contiguous weekly Saturdays ending at `end`, `n` of them, as weekly coverage ends
-function weeklyEnds(end: string, n: number): { periodEnd: string; periodType: 'weekly' }[] {
-  const out: { periodEnd: string; periodType: 'weekly' }[] = []
+// contiguous weekly Saturdays ending at `end`, `n` of them, each FULLY pulled
+// (data_through = its Saturday).
+function weeklyEnds(end: string, n: number): CoverageEnd[] {
+  const out: CoverageEnd[] = []
   const d = new Date(end + 'T00:00:00Z')
   for (let i = 0; i < n; i++) {
-    out.push({ periodEnd: d.toISOString().slice(0, 10), periodType: 'weekly' })
+    const iso = d.toISOString().slice(0, 10)
+    out.push({ periodEnd: iso, periodType: 'weekly', dataThrough: iso })
     d.setUTCDate(d.getUTCDate() - 7)
   }
   return out
 }
+const snap = (periodEnd: string): CoverageEnd => ({ periodEnd, periodType: 'snapshot', dataThrough: periodEnd })
+const month = (periodEnd: string): CoverageEnd => ({ periodEnd, periodType: 'monthly', dataThrough: periodEnd })
+const week = (periodEnd: string): CoverageEnd => ({ periodEnd, periodType: 'weekly', dataThrough: periodEnd })
 
 const base = { mode: 'weekly' as const, isActive: true, eventDriven: false, lastUploadAt: null as string | null, today: TODAY }
 
-test('weekly current: expected Saturday covered, no hole', () => {
-  assert.equal(
-    deriveStatus({ ...base, cadence: 'weekly', coverageEnds: weeklyEnds('2026-07-04', 10) }),
-    'current',
-  )
+test('weekly current: expected Saturday covered & fully pulled, no hole', () => {
+  assert.equal(deriveStatus({ ...base, cadence: 'weekly', coverageEnds: weeklyEnds('2026-07-04', 10) }), 'current')
+})
+
+test('weekly partial: expected week present but data_through short → due (within grace)', () => {
+  // today Monday 2026-07-06 → expected 2026-07-04 present but only pulled through 07-01.
+  const ends: CoverageEnd[] = [
+    ...weeklyEnds('2026-06-27', 6),
+    { periodEnd: '2026-07-04', periodType: 'weekly', dataThrough: '2026-07-01' },
+  ]
+  assert.equal(deriveStatus({ ...base, today: '2026-07-06', cadence: 'weekly', coverageEnds: ends }), 'due')
+})
+
+test('weekly partial beyond grace → overdue', () => {
+  const ends: CoverageEnd[] = [
+    ...weeklyEnds('2026-06-27', 6),
+    { periodEnd: '2026-07-04', periodType: 'weekly', dataThrough: '2026-07-01' },
+  ]
+  assert.equal(deriveStatus({ ...base, today: TODAY, cadence: 'weekly', coverageEnds: ends }), 'overdue')
+})
+
+test('weekly tolerance: data_through = Saturday − 1 (Friday) still counts as current', () => {
+  const ends: CoverageEnd[] = [
+    ...weeklyEnds('2026-06-27', 6),
+    { periodEnd: '2026-07-04', periodType: 'weekly', dataThrough: '2026-07-03' }, // Friday
+  ]
+  assert.equal(deriveStatus({ ...base, today: '2026-07-06', cadence: 'weekly', coverageEnds: ends }), 'current')
 })
 
 test('weekly due: expected uncovered but within grace (Monday)', () => {
-  // today Monday 2026-07-06 → expected 2026-07-04, daysPast 2 ≤ 3
   assert.equal(
     deriveStatus({ ...base, today: '2026-07-06', cadence: 'weekly', coverageEnds: weeklyEnds('2026-06-27', 6) }),
     'due',
@@ -38,9 +67,14 @@ test('weekly due: expected uncovered but within grace (Monday)', () => {
 })
 
 test('weekly overdue: expected uncovered beyond grace', () => {
-  // today Friday 2026-07-10 → expected 07-04 missing (latest 06-27), daysPast 6 > 3
+  assert.equal(deriveStatus({ ...base, cadence: 'weekly', coverageEnds: weeklyEnds('2026-06-27', 6) }), 'overdue')
+})
+
+test('weekly behind: an older owed week reads overdue even if the newest expected week is only 1d past', () => {
+  // customer_loyalty shape at 2026-07-12: fully covered only through 06-27; 07-04 AND 07-11
+  // both missing. Newest expected (07-11) is 1d past, but 07-04 has been owed 8d → overdue.
   assert.equal(
-    deriveStatus({ ...base, cadence: 'weekly', coverageEnds: weeklyEnds('2026-06-27', 6) }),
+    deriveStatus({ ...base, today: '2026-07-12', cadence: 'weekly', coverageEnds: weeklyEnds('2026-06-27', 6) }),
     'overdue',
   )
 })
@@ -51,66 +85,36 @@ test('weekly overdue: latest covered but a hole in the last 8 weeks', () => {
 })
 
 test('monthly current: last completed month covered', () => {
-  assert.equal(
-    deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', coverageEnds: [{ periodEnd: '2026-06-30', periodType: 'monthly' }] }),
-    'current',
-  )
+  assert.equal(deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', coverageEnds: [month('2026-06-30')] }), 'current')
 })
 
 test('monthly overdue: last completed month missing beyond grace', () => {
-  assert.equal(
-    deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', coverageEnds: [{ periodEnd: '2026-05-31', periodType: 'monthly' }] }),
-    'overdue',
-  )
+  assert.equal(deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', coverageEnds: [month('2026-05-31')] }), 'overdue')
 })
 
 test('snapshot current: latest snapshot within freshness (weekly-cadence snapshot)', () => {
-  assert.equal(
-    deriveStatus({ ...base, mode: 'snapshot', cadence: 'snapshot_weekly', coverageEnds: [{ periodEnd: '2026-07-06', periodType: 'snapshot' }] }),
-    'current',
-  )
+  assert.equal(deriveStatus({ ...base, mode: 'snapshot', cadence: 'snapshot_weekly', coverageEnds: [snap('2026-07-06')] }), 'current')
 })
 
 test('snapshot overdue: latest snapshot stale', () => {
-  assert.equal(
-    deriveStatus({ ...base, mode: 'snapshot', cadence: 'snapshot_weekly', coverageEnds: [{ periodEnd: '2026-06-10', periodType: 'snapshot' }] }),
-    'overdue',
-  )
+  assert.equal(deriveStatus({ ...base, mode: 'snapshot', cadence: 'snapshot_weekly', coverageEnds: [snap('2026-06-10')] }), 'overdue')
 })
 
 test('snapshot with monthly cadence (S&S) tolerates a longer gap → current', () => {
-  // latest 2026-06-20, today 2026-07-10 → 20 days; monthly-cadence snapshot freshDays 35
-  assert.equal(
-    deriveStatus({ ...base, mode: 'snapshot', cadence: 'monthly', coverageEnds: [{ periodEnd: '2026-06-20', periodType: 'snapshot' }] }),
-    'current',
-  )
+  assert.equal(deriveStatus({ ...base, mode: 'snapshot', cadence: 'monthly', coverageEnds: [snap('2026-06-20')] }), 'current')
 })
 
 test('snapshot-grade coverage under a weekly-cadence report keys off recency, not Saturday membership', () => {
-  // rule_assignments shape: cadence 'weekly', but a single fresh snapshot (uploaded yesterday).
-  assert.equal(
-    deriveStatus({ ...base, mode: 'snapshot', cadence: 'weekly', coverageEnds: [{ periodEnd: '2026-07-09', periodType: 'snapshot' }] }),
-    'current',
-  )
+  assert.equal(deriveStatus({ ...base, mode: 'snapshot', cadence: 'weekly', coverageEnds: [snap('2026-07-09')] }), 'current')
 })
 
 test('event-driven current: recent activity, historical gaps IGNORED', () => {
-  // Sparse coverage with a big hole, but latest period_end is this week → current.
-  const ends = [
-    { periodEnd: '2026-07-11', periodType: 'weekly' as const },
-    { periodEnd: '2026-05-30', periodType: 'weekly' as const }, // 6-week hole before it — must NOT matter
-  ]
-  assert.equal(
-    deriveStatus({ ...base, cadence: 'weekly', eventDriven: true, coverageEnds: ends }),
-    'current',
-  )
+  const ends = [week('2026-07-11'), week('2026-05-30')] // 6-week hole must NOT matter
+  assert.equal(deriveStatus({ ...base, cadence: 'weekly', eventDriven: true, coverageEnds: ends }), 'current')
 })
 
 test('event-driven overdue: no recent upload or coverage', () => {
-  assert.equal(
-    deriveStatus({ ...base, cadence: 'weekly', eventDriven: true, coverageEnds: [{ periodEnd: '2026-06-01', periodType: 'weekly' }] }),
-    'overdue',
-  )
+  assert.equal(deriveStatus({ ...base, cadence: 'weekly', eventDriven: true, coverageEnds: [week('2026-06-01')] }), 'overdue')
 })
 
 test('ad_hoc cadence → ad_hoc', () => {
@@ -122,4 +126,13 @@ test('inactive report → planned (regardless of coverage)', () => {
     deriveStatus({ ...base, isActive: false, cadence: 'weekly', coverageEnds: weeklyEnds('2026-07-04', 8) }),
     'planned',
   )
+})
+
+test('relTimeLabel: calendar-day difference on UTC date parts (not elapsed ms)', () => {
+  // The reported bug: a 2026-07-09 20:42 UTC upload must read 3d ago on 2026-07-12.
+  assert.equal(relTimeLabel('2026-07-09T20:42:00.000Z', '2026-07-12'), '3d ago')
+  assert.equal(relTimeLabel(null, '2026-07-12'), '—')
+  assert.equal(relTimeLabel('2026-07-12T01:00:00.000Z', '2026-07-12'), 'today')
+  assert.equal(relTimeLabel('2026-07-11T23:59:00.000Z', '2026-07-12'), '1d ago')
+  assert.equal(relTimeLabel('2026-07-04T00:00:00.000Z', '2026-07-12'), '1w ago')
 })

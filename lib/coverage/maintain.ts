@@ -38,6 +38,7 @@ export async function upsertCoverageForUpload(args: {
     period_end: p.period_end,
     period_label: p.period_label,
     period_type: p.period_type,
+    data_through: p.data_through,
     event_driven: cfg.eventDriven,
     source: 'upload',
     updated_at: now,

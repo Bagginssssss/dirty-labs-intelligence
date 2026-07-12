@@ -18,6 +18,7 @@ export type CoveragePeriod = {
   period_end: string
   period_label: string
   period_type: 'weekly' | 'monthly' | 'snapshot'
+  data_through: string // max source date within the period (INB-147)
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -34,27 +35,30 @@ function monthEnd(ym: string): string {
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10) // day 0 of next month
 }
 
+// section is sorted ascending, so the last date written per bucket is its max
+// (data_through = how far the source data reaches inside the period).
 function monthlyPeriods(section: string[]): CoveragePeriod[] {
-  const yms = [...new Set(section.map(d => d.slice(0, 7)))].sort()
-  return yms.map(ym => ({
+  const maxByYm = new Map<string, string>()
+  for (const d of section) maxByYm.set(d.slice(0, 7), d)
+  return [...maxByYm.keys()].sort().map(ym => ({
     period_start: `${ym}-01`,
     period_end: monthEnd(ym),
     period_label: ym,
     period_type: 'monthly' as const,
+    data_through: maxByYm.get(ym)!,
   }))
 }
 
 function weeklyPeriods(section: string[]): CoveragePeriod[] {
-  const ends = [...new Set(section.map(weekEndSaturday))].sort()
-  return ends.map(end => {
-    const start = addDays(end, -6)
-    return {
-      period_start: start,
-      period_end: end,
-      period_label: `W/E ${end}`,
-      period_type: 'weekly' as const,
-    }
-  })
+  const maxByEnd = new Map<string, string>()
+  for (const d of section) maxByEnd.set(weekEndSaturday(d), d)
+  return [...maxByEnd.keys()].sort().map(end => ({
+    period_start: addDays(end, -6),
+    period_end: end,
+    period_label: `W/E ${end}`,
+    period_type: 'weekly' as const,
+    data_through: maxByEnd.get(end)!,
+  }))
 }
 
 // True only when `section` is a genuine monthly ERA: ≥2 dates, each ~a month apart
@@ -84,6 +88,7 @@ export function datesToPeriods(dates: string[], mode: CoverageMode): CoveragePer
       period_end: d,
       period_label: d,
       period_type: 'snapshot' as const,
+      data_through: d,
     }))
   }
 

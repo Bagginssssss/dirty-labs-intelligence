@@ -11,25 +11,25 @@ import { datesToPeriods } from '../lib/coverage/buckets.ts'
 test('snapshot: one record per distinct date; dedupes; future stripped', () => {
   const out = datesToPeriods(['2026-07-06', '2026-07-06', '2026-06-29', '2099-01-01'], 'snapshot')
   assert.deepEqual(out, [
-    { period_start: '2026-06-29', period_end: '2026-06-29', period_label: '2026-06-29', period_type: 'snapshot' },
-    { period_start: '2026-07-06', period_end: '2026-07-06', period_label: '2026-07-06', period_type: 'snapshot' },
+    { period_start: '2026-06-29', period_end: '2026-06-29', period_label: '2026-06-29', period_type: 'snapshot', data_through: '2026-06-29' },
+    { period_start: '2026-07-06', period_end: '2026-07-06', period_label: '2026-07-06', period_type: 'snapshot', data_through: '2026-07-06' },
   ])
 })
 
 test('monthly: one record per year-month spanning the full month', () => {
   const out = datesToPeriods(['2025-05-31', '2025-05-01', '2026-02-01'], 'monthly')
   assert.deepEqual(out, [
-    { period_start: '2025-05-01', period_end: '2025-05-31', period_label: '2025-05', period_type: 'monthly' },
-    { period_start: '2026-02-01', period_end: '2026-02-28', period_label: '2026-02', period_type: 'monthly' },
+    { period_start: '2025-05-01', period_end: '2025-05-31', period_label: '2025-05', period_type: 'monthly', data_through: '2025-05-31' },
+    { period_start: '2026-02-01', period_end: '2026-02-28', period_label: '2026-02', period_type: 'monthly', data_through: '2026-02-01' },
   ])
 })
 
 test('weekly anchors (already Saturdays) → each its own week, start = end−6', () => {
   const out = datesToPeriods(['2026-02-21', '2026-02-28', '2026-03-07'], 'weekly')
   assert.deepEqual(out, [
-    { period_start: '2026-02-15', period_end: '2026-02-21', period_label: 'W/E 2026-02-21', period_type: 'weekly' },
-    { period_start: '2026-02-22', period_end: '2026-02-28', period_label: 'W/E 2026-02-28', period_type: 'weekly' },
-    { period_start: '2026-03-01', period_end: '2026-03-07', period_label: 'W/E 2026-03-07', period_type: 'weekly' },
+    { period_start: '2026-02-15', period_end: '2026-02-21', period_label: 'W/E 2026-02-21', period_type: 'weekly', data_through: '2026-02-21' },
+    { period_start: '2026-02-22', period_end: '2026-02-28', period_label: 'W/E 2026-02-28', period_type: 'weekly', data_through: '2026-02-28' },
+    { period_start: '2026-03-01', period_end: '2026-03-07', period_label: 'W/E 2026-03-07', period_type: 'weekly', data_through: '2026-03-07' },
   ])
 })
 
@@ -37,7 +37,7 @@ test('weekly daily rows: 7 contiguous days (Sun–Sat) collapse into one week', 
   const days = ['2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25', '2026-06-26', '2026-06-27']
   const out = datesToPeriods(days, 'weekly')
   assert.deepEqual(out, [
-    { period_start: '2026-06-21', period_end: '2026-06-27', period_label: 'W/E 2026-06-27', period_type: 'weekly' },
+    { period_start: '2026-06-21', period_end: '2026-06-27', period_label: 'W/E 2026-06-27', period_type: 'weekly', data_through: '2026-06-27' },
   ])
 })
 
@@ -69,8 +69,19 @@ test('weekly single date → ONE weekly period, never a month (forward-maintenan
   // (no small gap) — but a lone weekly date must bucket weekly, not become 2026-06.
   const out = datesToPeriods(['2026-06-14'], 'weekly') // Sunday → week ending Sat 2026-06-20
   assert.deepEqual(out, [
-    { period_start: '2026-06-14', period_end: '2026-06-20', period_label: 'W/E 2026-06-20', period_type: 'weekly' },
+    // partial week: data present only through Sunday 06-14 (data_through < the Saturday)
+    { period_start: '2026-06-14', period_end: '2026-06-20', period_label: 'W/E 2026-06-20', period_type: 'weekly', data_through: '2026-06-14' },
   ])
+})
+
+test('data_through = max source date in the week (partial vs full)', () => {
+  // Mon–Wed of the week ending 2026-06-27 → present, data_through = Wed 06-24 (partial).
+  const partial = datesToPeriods(['2026-06-22', '2026-06-23', '2026-06-24'], 'weekly')
+  assert.equal(partial[0].period_end, '2026-06-27')
+  assert.equal(partial[0].data_through, '2026-06-24')
+  // Through the Saturday → data_through = 06-27 (full).
+  const full = datesToPeriods(['2026-06-22', '2026-06-27'], 'weekly')
+  assert.equal(full[0].data_through, '2026-06-27')
 })
 
 test('weekly two anchors 14 days apart (a missing week) → two weeks, not monthly', () => {
