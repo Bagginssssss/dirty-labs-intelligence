@@ -9,6 +9,7 @@ import { periodStart } from '@/lib/upload-tracker/gaps'
 import { UPSERT_CONFLICT_KEYS } from '@/lib/upsert-config'
 import { calculateDerivedMetricsRange, recalcPlanForUpload } from '@/lib/derived-metrics'
 import { upsertCoverageForUpload } from '@/lib/coverage/maintain'
+import { snapshotNameOverlap, SMARTSCOUT_SNAPSHOT_OVERLAP_MIN } from '@/lib/smartscout/snapshot-overlap'
 
 const BATCH_SIZE = 500
 
@@ -361,6 +362,60 @@ export async function POST(request: Request) {
     reportKey = derivedKey.reportKey;
     if (derivedKey.warning) {
       console.warn(`[ingest] report_key not derived for ${effectiveReportType}: ${derivedKey.warning}`);
+    }
+
+    // 3b. Cross-snapshot sanity check (INB-152). A sticky subcategory dropdown ingested a
+    // Toilet Cleaners brands file under Stain Removers (~10% brand overlap). Before storing,
+    // compare this file's brand set to the SELECTED subcategory's most recent prior snapshot;
+    // reject a near-disjoint file. Brands-only: the products report derives its subcategory from
+    // file content (self-labeling), so it has no dropdown to mismatch. Skips cleanly when there
+    // is no prior snapshot (first-ever upload) or the file has no readable brand names.
+    if (reportType === 'smartscout_subcategory_brands' && mappedRows.length > 0) {
+      const first = mappedRows[0] as Record<string, unknown>
+      const subcat = first.subcategory as string | null | undefined
+      const incomingDate = first.snapshot_date as string | null | undefined
+      const fileNames = (mappedRows as Record<string, unknown>[])
+        .map(r => r.brand_name)
+        .filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+
+      if (subcat && incomingDate && fileNames.length > 0) {
+        // Most recent prior snapshot date for this subcategory (bounded: one row).
+        const { data: priorDateRows, error: priorDateErr } = await supabaseAdmin
+          .from('smartscout_subcategory_brands')
+          .select('snapshot_date')
+          .eq('brand_id', brandId)
+          .eq('subcategory', subcat)
+          .lt('snapshot_date', incomingDate)
+          .order('snapshot_date', { ascending: false })
+          .limit(1)
+        if (priorDateErr) throw new Error(`prior-snapshot lookup failed: ${priorDateErr.message}`)
+
+        const priorDate = priorDateRows?.[0]?.snapshot_date as string | undefined
+        if (priorDate) {
+          // That snapshot's brand names (bounded: one snapshot ≈ 100–200 rows).
+          const { data: priorNameRows, error: priorNameErr } = await supabaseAdmin
+            .from('smartscout_subcategory_brands')
+            .select('brand_name')
+            .eq('brand_id', brandId)
+            .eq('subcategory', subcat)
+            .eq('snapshot_date', priorDate)
+          if (priorNameErr) throw new Error(`prior-snapshot names read failed: ${priorNameErr.message}`)
+
+          const priorNames = (priorNameRows ?? [])
+            .map(r => r.brand_name)
+            .filter((n): n is string => typeof n === 'string')
+
+          if (priorNames.length > 0) {
+            const overlap = snapshotNameOverlap(fileNames, priorNames)
+            if (overlap < SMARTSCOUT_SNAPSHOT_OVERLAP_MIN) {
+              return Response.json(
+                { error: `This file's brands don't match previous ${subcat} snapshots — check the dropdown.` },
+                { status: 400 },
+              )
+            }
+          }
+        }
+      }
     }
 
     // 4. Resolve FK references (campaigns, ad_groups, asins)

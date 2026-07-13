@@ -102,6 +102,10 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
       const json: IngestResult = await res.json()
       setResult(json)
       if (json.status === 'ok') {
+        // INB-152: clear the subcategory so a sticky selection can't leak into the next file
+        // (a leftover choice ingested a Toilet Cleaners file as Stain Removers). Force an active
+        // choice per file. Reset only on success — a failed upload keeps it for retry.
+        setSubcategory('')
         await refreshTrackerCache()
         router.refresh()
       }
