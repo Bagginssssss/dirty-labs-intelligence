@@ -175,16 +175,39 @@ function monthlyStrip(coverageEnds: CoverageEnd[], eventDriven: boolean, today: 
   return cells
 }
 
-function weekCells(coverageEnds: CoverageEnd[], eventDriven: boolean, mode: CoverageMode, today: string, n: number): StripCell[] {
-  const covered = new Set<string>()
-  for (const e of coverageEnds) covered.add(e.periodType === 'weekly' ? e.periodEnd : weekEndSaturday(e.periodEnd))
+function weekCells(
+  coverageEnds: CoverageEnd[],
+  eventDriven: boolean,
+  mode: CoverageMode,
+  today: string,
+  n: number,
+  coveringWindowDays: number | null,
+): StripCell[] {
   const missing: StripCellState = eventDriven || mode === 'snapshot' ? 'neutral' : 'gap'
+  // Snapshots pulled mid-week land in the week ending the UPCOMING Saturday, so the snapshot
+  // strip's rightmost cell is the in-progress week (a same-day capture must fill it, not read
+  // empty forever). Weekly/monthly modes end at the last COMPLETED Saturday.
+  const anchor = mode === 'snapshot' ? weekEndSaturday(today) : mostRecentSaturday(today)
+
+  // Set-membership fill (all reports except covering-window): map each coverage period to its
+  // week-ending Saturday. Covering-window reports (S&S) instead label a snapshot at its window
+  // START and cover [date, date + window] — see the per-cell interval test below.
+  const covered = new Set<string>()
+  if (coveringWindowDays == null) {
+    for (const e of coverageEnds) covered.add(e.periodType === 'weekly' ? e.periodEnd : weekEndSaturday(e.periodEnd))
+  }
+
   const cells: StripCell[] = []
-  const d = new Date(mostRecentSaturday(today) + 'T00:00:00Z')
+  const d = new Date(anchor + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() - 7 * (n - 1))
   for (let i = 0; i < n; i++) {
-    const s = d.toISOString().slice(0, 10)
-    cells.push({ periodEnd: s, label: `W/E ${s}`, state: covered.has(s) ? 'filled' : missing })
+    const end = d.toISOString().slice(0, 10)
+    // A week-cell spans [end-6, end]; a covering-window snapshot fills it when its
+    // [periodEnd, periodEnd+window] interval intersects that span.
+    const filled = coveringWindowDays == null
+      ? covered.has(end)
+      : coverageEnds.some(e => e.periodEnd <= end && addDays(e.periodEnd, coveringWindowDays) >= addDays(end, -6))
+    cells.push({ periodEnd: end, label: `W/E ${end}`, state: filled ? 'filled' : missing })
     d.setUTCDate(d.getUTCDate() + 7)
   }
   return cells
@@ -196,12 +219,15 @@ export function buildStrip(p: {
   coverageEnds: CoverageEnd[]
   today: string
   n?: number
+  // Covering-window reports (S&S): each snapshot covers a rolling window of this many days from
+  // its date (INB-152). Absent/null → each period is a point (set-membership fill).
+  coveringWindowDays?: number | null
 }): StripCell[] {
   const n = p.n ?? 8
   const cells =
     p.mode === 'monthly'
       ? monthlyStrip(p.coverageEnds, p.eventDriven, p.today, n)
-      : weekCells(p.coverageEnds, p.eventDriven, p.mode, p.today, n)
+      : weekCells(p.coverageEnds, p.eventDriven, p.mode, p.today, n, p.coveringWindowDays ?? null)
 
   // Publication lag: the most-recent expected cell, when uncovered but still within the
   // due grace, reads as pending (awaiting), not a red gap — matches the due status.

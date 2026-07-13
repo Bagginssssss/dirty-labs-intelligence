@@ -61,14 +61,50 @@ test('monthly: 8 months of coverage → 8 filled cells (no false gaps)', () => {
 })
 
 test('snapshot_weekly: snapshots bucket into their week; missing weeks neutral', () => {
-  // snapshots on 2026-07-01 (→ week ending 07-04) and 2026-06-24 (→ 06-27); others missing → neutral
+  // snapshots on 2026-07-01 (→ week ending 07-04) and 2026-06-24 (→ 06-27); others missing → neutral.
+  // TODAY 2026-07-10 (Fri) → snapshot strips now anchor the rightmost cell at weekEndSaturday(today)
+  // = 2026-07-11 (the in-progress week), so the 8 cells span 2026-05-23 … 2026-07-11 (05-16 falls off).
   const coverageEnds = [
     { periodEnd: '2026-07-01', periodType: 'snapshot' as const, dataThrough: '2026-07-01' },
     { periodEnd: '2026-06-24', periodType: 'snapshot' as const, dataThrough: '2026-06-24' },
   ]
   const strip = buildStrip({ mode: 'snapshot', eventDriven: false, coverageEnds, today: TODAY })
+  assert.equal(strip[strip.length - 1].periodEnd, '2026-07-11', 'rightmost = in-progress week')
   assert.equal(strip.find(c => c.periodEnd === '2026-07-04')?.state, 'filled')
   assert.equal(strip.find(c => c.periodEnd === '2026-06-27')?.state, 'filled')
-  assert.equal(strip.find(c => c.periodEnd === '2026-05-16')?.state, 'neutral')
+  assert.equal(strip.find(c => c.periodEnd === '2026-05-23')?.state, 'neutral')
+  assert.equal(strip.filter(c => c.state === 'gap').length, 0)
+})
+
+test('snapshot strip includes the in-progress week — a Monday-captured snapshot fills the rightmost cell', () => {
+  // today Monday 2026-07-13 → weekEndSaturday = 2026-07-18 (upcoming Sat), mostRecentSaturday = 07-11.
+  // A same-day snapshot buckets into week ending 07-18; the strip must show that cell (rightmost) filled,
+  // not read empty every week forever (the bug: strip edge stuck at 07-11).
+  const strip = buildStrip({
+    mode: 'snapshot',
+    eventDriven: false,
+    coverageEnds: [{ periodEnd: '2026-07-13', periodType: 'snapshot', dataThrough: '2026-07-13' }],
+    today: '2026-07-13',
+  })
+  assert.equal(strip[strip.length - 1].periodEnd, '2026-07-18', 'rightmost cell = upcoming Saturday')
+  assert.equal(strip[strip.length - 1].state, 'filled', 'same-day snapshot fills the in-progress week')
+})
+
+test('covering-window (S&S): a snapshot fills every week-cell its 30-day window intersects', () => {
+  // S&S labels a snapshot at its window START and it covers [date, date+30]. today 2026-07-13.
+  // A snapshot dated 2026-06-20 covers 06-20…07-20 → must fill every week-cell in that span, not just one.
+  const strip = buildStrip({
+    mode: 'snapshot',
+    eventDriven: false,
+    coverageEnds: [{ periodEnd: '2026-06-20', periodType: 'snapshot', dataThrough: '2026-06-20' }],
+    today: '2026-07-13',
+    coveringWindowDays: 30,
+  })
+  // Weeks whose [Sat-6, Sat] span intersects [2026-06-20, 2026-07-20]: 06-20, 06-27, 07-04, 07-11, 07-18.
+  for (const sat of ['2026-06-20', '2026-06-27', '2026-07-04', '2026-07-11', '2026-07-18']) {
+    assert.equal(strip.find(c => c.periodEnd === sat)?.state, 'filled', `${sat} covered by the window`)
+  }
+  // A week fully before the window start (06-13, span 06-07…06-13) does not intersect → neutral.
+  assert.equal(strip.find(c => c.periodEnd === '2026-06-13')?.state, 'neutral', 'pre-window week not filled')
   assert.equal(strip.filter(c => c.state === 'gap').length, 0)
 })

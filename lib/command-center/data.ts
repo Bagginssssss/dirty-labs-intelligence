@@ -103,7 +103,9 @@ async function _load(brandId: string, today: string): Promise<CommandCenterVM> {
         latestDataThrough: latest?.data_through ?? null,
       }),
       lastUploadAt,
-      strip: r.is_active && mode ? buildStrip({ mode, eventDriven, coverageEnds, today }) : [],
+      strip: r.is_active && mode
+        ? buildStrip({ mode, eventDriven, coverageEnds, today, coveringWindowDays: cfg?.coveringWindowDays ?? null })
+        : [],
     }
   })
 
