@@ -23,6 +23,9 @@ export const REQUIRED_NOT_NULL: Record<string, string[]> = {
   // value here means a genuinely blank audit row worth rejecting.
   scale_insights_rule_change_log: ['created_date', 'log_type', 'campaign', 'rule_name'],
   scale_insights_rule_assignments: ['snapshot_date', 'sponsored_type', 'campaign'],
+  // INB-144 — S&S Dashboard: reject a row whose key columns didn't map.
+  sns_dashboard_daily: ['metric_date', 'metric'],
+  sns_dashboard_snapshots: ['snapshot_date', 'report'],
 }
 
 export interface RejectedRow {

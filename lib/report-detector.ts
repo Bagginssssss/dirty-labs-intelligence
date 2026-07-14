@@ -227,6 +227,34 @@ const SIGNATURES: Array<{
     tableName: 'scale_insights_keyword_rank',
     match: h => has(h, 'organic_rank'),
   },
+  // ── INB-144: S&S Dashboard exports (Seller Central) ──────────────────────────
+  // The 5 daily exports all share col 1 `calc_date_granularity`; one greedy signature
+  // claims them all (the specific report_key is content-derived in deriveReportKey).
+  // MUST precede subscribe_and_save — the Subscription Count file carries "Active
+  // Subscriptions (CUSTOM)" and would otherwise match the active_subscriptions fallback.
+  {
+    reportType: 'sns_dashboard_daily',
+    tableName: 'sns_dashboard_daily',
+    match: h => has(h, 'calc_date_granularity'),
+  },
+  {
+    // Subscriber LTV by segment (snapshot).
+    reportType: 'sns_dashboard_snapshots',
+    tableName: 'sns_dashboard_snapshots',
+    match: h => has(h, 'calc_customer_segment') && has(h, 'calc_purchase_type') && has(h, 'avg_gms'),
+  },
+  {
+    // Avg reorders, subscriber vs non (snapshot).
+    reportType: 'sns_dashboard_snapshots',
+    tableName: 'sns_dashboard_snapshots',
+    match: h => has(h, 'calc_is_subscriber') && has(h, 'calc_avg_reorder'),
+  },
+  {
+    // Subscriber retention 30/90-day (snapshot).
+    reportType: 'sns_dashboard_snapshots',
+    tableName: 'sns_dashboard_snapshots',
+    match: h => has(h, 'calc_metric_name') && has(h, 'calc_retention'),
+  },
   {
     // Confirmed Amazon S&S headers normalise as:
     //   "SnS shipped units"              → "sn_s_shipped_units" ... actually:

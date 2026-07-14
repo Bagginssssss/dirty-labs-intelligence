@@ -47,4 +47,7 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   // SmartScout — weekly snapshots
   smartscout_subcategory_brands:    { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
   smartscout_subcategory_products:  { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
+  // Subscribe & Save Dashboard (INB-144) — dailies bucketed to weeks; snapshots point-in-time
+  sns_dashboard_daily:              { periodColumn: 'metric_date',     mode: 'weekly',   eventDriven: false },
+  sns_dashboard_snapshots:          { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
 }

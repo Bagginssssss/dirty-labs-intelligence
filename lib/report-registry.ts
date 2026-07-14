@@ -57,6 +57,15 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
 
   // ── Subscribe & Save ───────────────────────────────────────────────────────────
   { report_key: 'subscribe_and_save', display_name: 'S&S Performance', source_group: 'Subscribe & Save', cadence: 'monthly', pull_period: 'Latest month', target_table: 'subscribe_and_save', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Overlapping rolling ~30d windows labeled at period start (INB-136 covering-period semantics).' },
+  // S&S Dashboard exports (INB-144): 5 dailies (one table, discriminated on metric) + 3 snapshots (one table, discriminated on report).
+  { report_key: 'sns_dashboard_sales', display_name: 'S&S Daily — Sales (Reorder vs S&S)', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['reorder_sales', 'sns_sales'] }, requires_period_dates: false, is_active: true, sort_order: 2, notes: null },
+  { report_key: 'sns_dashboard_reorder_share', display_name: 'S&S Daily — Reorder & S&S Share', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['reorder_rate', 'sns_sales_share'] }, requires_period_dates: false, is_active: true, sort_order: 3, notes: null },
+  { report_key: 'sns_dashboard_subscription_count', display_name: 'S&S Daily — Subscription Count', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['active_subscriptions', 'active_subscriptions_ly'] }, requires_period_dates: false, is_active: true, sort_order: 4, notes: null },
+  { report_key: 'sns_dashboard_coupon_sales', display_name: 'S&S Daily — Coupon Sales Share', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['coupon_sales_share', 'coupon_sales_share_ly'] }, requires_period_dates: false, is_active: true, sort_order: 5, notes: null },
+  { report_key: 'sns_dashboard_coupon_subs', display_name: 'S&S Daily — Coupon Subs Share', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['coupon_subs_share', 'coupon_subs_share_ly'] }, requires_period_dates: false, is_active: true, sort_order: 6, notes: null },
+  { report_key: 'sns_dashboard_ltv', display_name: 'S&S Snapshot — Subscriber LTV by Segment', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['subscriber_ltv'] }, requires_period_dates: true, is_active: true, sort_order: 7, notes: 'Trailing 24-month avg GMS by segment x purchase type; values as-of capture date. No backfill — history starts at first capture.' },
+  { report_key: 'sns_dashboard_avg_reorders', display_name: 'S&S Snapshot — Avg Reorders (Sub vs Non)', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['avg_reorders'] }, requires_period_dates: true, is_active: true, sort_order: 8, notes: 'Trailing 12 months; values as-of capture date. No backfill — history starts at first capture.' },
+  { report_key: 'sns_dashboard_retention', display_name: 'S&S Snapshot — Subscriber Retention', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['subscriber_retention'] }, requires_period_dates: true, is_active: true, sort_order: 9, notes: 'Trailing window undocumented (likely 12mo, unverified); values as-of capture date. No backfill — history starts at first capture.' },
 
   // ── Virtual Bundles ─────────────────────────────────────────────────────────────
   { report_key: 'vb_sales_summary', display_name: 'VB Sales (Summary)', source_group: 'Virtual Bundles', cadence: 'weekly', pull_period: 'Rolling 90d', target_table: 'virtual_bundle_sales_snapshots', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Amazon pushes by email on Tuesdays; multi-section 90-day snapshot export.' },
@@ -193,6 +202,33 @@ export function deriveReportKey(
     case 'scale_insights_rule_assignments':
       // Assigned export carries the rule-list columns; Unassigned does not.
       return { reportKey: hasHeader(headers, 'bidding_rules') ? 'si_rules_assigned' : 'si_rules_unassigned' }
+
+    // INB-144 — S&S Dashboard: one reportType per table fans out to fine-grained report_keys
+    // by the mapped metric/report field (each file carries exactly one report's rows).
+    case 'sns_dashboard_daily': {
+      const SLUG_TO_KEY: Record<string, string> = {
+        reorder_sales: 'sns_dashboard_sales',                 sns_sales: 'sns_dashboard_sales',
+        reorder_rate: 'sns_dashboard_reorder_share',          sns_sales_share: 'sns_dashboard_reorder_share',
+        active_subscriptions: 'sns_dashboard_subscription_count', active_subscriptions_ly: 'sns_dashboard_subscription_count',
+        coupon_sales_share: 'sns_dashboard_coupon_sales',     coupon_sales_share_ly: 'sns_dashboard_coupon_sales',
+        coupon_subs_share: 'sns_dashboard_coupon_subs',       coupon_subs_share_ly: 'sns_dashboard_coupon_subs',
+      }
+      const keys = new Set(distinctField(mappedRows, 'metric').map(m => SLUG_TO_KEY[m]).filter(Boolean))
+      if (keys.size !== 1) return warn(`S&S Dashboard daily upload spans ${keys.size} reports [${[...keys].join(', ')}] — expected one`)
+      return validated([...keys][0], 'S&S Dashboard daily')
+    }
+    case 'sns_dashboard_snapshots': {
+      const REPORT_TO_KEY: Record<string, string> = {
+        subscriber_ltv: 'sns_dashboard_ltv',
+        avg_reorders: 'sns_dashboard_avg_reorders',
+        subscriber_retention: 'sns_dashboard_retention',
+      }
+      const reports = distinctField(mappedRows, 'report')
+      if (reports.length !== 1 || !REPORT_TO_KEY[reports[0]]) {
+        return warn(`S&S Dashboard snapshot upload spans ${reports.length} reports [${reports.join(', ')}] — expected one`)
+      }
+      return validated(REPORT_TO_KEY[reports[0]], 'S&S Dashboard snapshot')
+    }
 
     default:
       return warn(`no registry mapping for report type '${effectiveReportType}'`)

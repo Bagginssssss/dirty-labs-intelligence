@@ -3,6 +3,7 @@ import { partitionRequiredNotNull, periodDatesError, periodDateRangeError, dedup
 import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
+import { unmappedSnsDailyColumns } from '@/lib/mappers/sns-dashboard-daily'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
 import { periodStart } from '@/lib/upload-tracker/gaps'
@@ -319,6 +320,19 @@ export async function POST(request: Request) {
       return Response.json({ error: dateRangeError }, { status: 400 })
     }
 
+    // INB-144: S&S Dashboard daily detection is greedy (any file with calc_date_granularity),
+    // so a metric column absent from the header->slug map must be REJECTED — never silently
+    // dropped (guards against Amazon renaming/adding a column). Runs before any mapping/write.
+    if (reportType === 'sns_dashboard_daily') {
+      const unmapped = unmappedSnsDailyColumns(parseResult.headers)
+      if (unmapped.length > 0) {
+        return Response.json(
+          { error: `S&S Daily file has unmapped metric column(s): ${unmapped.join(', ')} — update the header→slug map.` },
+          { status: 400 },
+        )
+      }
+    }
+
     // 3. Map rows
     // Batch mappers receive all rows at once (e.g. for cross-row deduplication).
     // Row-by-row mappers are applied via flatMap (handles single or array returns).
@@ -457,6 +471,8 @@ export async function POST(request: Request) {
       subscribe_and_save:               ['report_date', 'date_range_end'],
       scale_insights_rule_change_log:   ['created_date'],
       scale_insights_rule_assignments:  ['snapshot_date'],
+      sns_dashboard_daily:              ['metric_date'],
+      sns_dashboard_snapshots:          ['snapshot_date'],
     }
     const dateCols = DATE_COL_OVERRIDES[tableName] ?? ['report_date']
     const allDates = uniqueRows

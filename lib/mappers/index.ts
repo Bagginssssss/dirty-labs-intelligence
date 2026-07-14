@@ -20,6 +20,8 @@ import { mapVirtualBundleSales } from './virtual-bundle-sales'
 import { mapVirtualBundleDaily } from './virtual-bundle-daily'
 import { mapVirtualBundleSnapshots } from './virtual-bundle-snapshots'
 import { mapBrandAnalyticsCustomerLoyalty } from './brand-analytics-customer-loyalty'
+import { mapSnsDashboardDaily } from './sns-dashboard-daily'
+import { mapSnsDashboardSnapshots } from './sns-dashboard-snapshots'
 
 // MapperFn may return a single row or an array of rows (for unpivoting mappers).
 export type MapperFn = (row: RawRow, brandId: string, context?: MapperContext) => MappedRow | MappedRow[]
@@ -45,6 +47,9 @@ const MAPPERS: Record<string, MapperFn> = {
   smartscout_subcategory_brands: mapSmartscoutSubcategoryBrands,
   virtual_bundle_sales:          mapVirtualBundleSales,
   virtual_bundle_sales_daily:    mapVirtualBundleDaily,
+  // INB-144 — S&S Dashboard (2 reportTypes, 8 content-derived report_keys)
+  sns_dashboard_daily:           mapSnsDashboardDaily,
+  sns_dashboard_snapshots:       mapSnsDashboardSnapshots,
 }
 
 const BATCH_MAPPERS: Record<string, BatchMapperFn> = {
@@ -83,3 +88,5 @@ export * from './search-query-performance'
 export * from './smartscout-subcategory-products'
 export * from './smartscout-subcategory-brands'
 export * from './brand-analytics-customer-loyalty'
+export * from './sns-dashboard-daily'
+export * from './sns-dashboard-snapshots'

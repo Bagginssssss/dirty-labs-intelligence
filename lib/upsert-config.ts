@@ -37,6 +37,9 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   scale_insights_rule_assignments: 'brand_id,snapshot_date,campaign,ad_group',
   // INB-146 — derived coverage, upserted post-upload (maintain.ts) + by the backfill.
   report_coverage:                 'report_key,period_start',
+  // INB-144 — S&S Dashboard: daily long form + shared snapshot table (migration 047).
+  sns_dashboard_daily:             'brand_id,metric_date,metric',
+  sns_dashboard_snapshots:         'brand_id,snapshot_date,report,dim1,dim2',
 }
 
 // Everything the constraint checker must cover: the ingest map above PLUS conflict
