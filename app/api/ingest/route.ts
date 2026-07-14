@@ -473,6 +473,7 @@ export async function POST(request: Request) {
       scale_insights_rule_assignments:  ['snapshot_date'],
       sns_dashboard_daily:              ['metric_date'],
       sns_dashboard_snapshots:          ['snapshot_date'],
+      brand_analytics_repeat_purchase:  ['reporting_date'],
     }
     const dateCols = DATE_COL_OVERRIDES[tableName] ?? ['report_date']
     const allDates = uniqueRows

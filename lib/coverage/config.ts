@@ -39,6 +39,7 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   // Brand Analytics — weekly Saturday anchors (SQP is mixed-cadence: monthly era + weekly)
   search_query_performance:         { periodColumn: 'report_date',     mode: 'weekly',   eventDriven: false },
   brand_analytics_customer_loyalty: { periodColumn: 'period_end_date', mode: 'weekly',   eventDriven: false },
+  brand_analytics_repeat_purchase:  { periodColumn: 'reporting_date',  mode: 'weekly',   eventDriven: false },
   // Scale Insights
   scale_insights_keyword_rank:      { periodColumn: 'report_date',     mode: 'weekly',   eventDriven: false },
   scale_insights_bid_log:           { periodColumn: 'change_timestamp',mode: 'weekly',   eventDriven: true  },

@@ -340,6 +340,14 @@ const SIGNATURES: Array<{
       has(h, 'potential_new_customers'),
   },
   {
+    // INB-141 — BA Repeat Purchase Behavior (brand + ASIN views share the repeat columns; the
+    // mapper derives level from the ASIN column). Unique combination: both "Repeat Ordered
+    // Product Sales" and "Repeat Customer Share" only co-occur here (customer_loyalty has neither).
+    reportType: 'brand_analytics_repeat_purchase',
+    tableName:  'brand_analytics_repeat_purchase',
+    match: h => has(h, 'repeat_ordered_product_sales') && has(h, 'repeat_customer_share'),
+  },
+  {
     // Guard: lacks 'targeting' and 'match_type' so a targeting report file that
     // somehow reaches this check is never mis-labelled as SmartScout SOV.
     reportType: 'smartscout_share_of_voice',

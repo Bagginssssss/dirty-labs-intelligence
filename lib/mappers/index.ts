@@ -22,6 +22,7 @@ import { mapVirtualBundleSnapshots } from './virtual-bundle-snapshots'
 import { mapBrandAnalyticsCustomerLoyalty } from './brand-analytics-customer-loyalty'
 import { mapSnsDashboardDaily } from './sns-dashboard-daily'
 import { mapSnsDashboardSnapshots } from './sns-dashboard-snapshots'
+import { mapRepeatPurchase } from './repeat-purchase'
 
 // MapperFn may return a single row or an array of rows (for unpivoting mappers).
 export type MapperFn = (row: RawRow, brandId: string, context?: MapperContext) => MappedRow | MappedRow[]
@@ -50,6 +51,8 @@ const MAPPERS: Record<string, MapperFn> = {
   // INB-144 — S&S Dashboard (2 reportTypes, 8 content-derived report_keys)
   sns_dashboard_daily:           mapSnsDashboardDaily,
   sns_dashboard_snapshots:       mapSnsDashboardSnapshots,
+  // INB-141 — BA Repeat Purchase (1 reportType, 2 content-derived report_keys)
+  brand_analytics_repeat_purchase: mapRepeatPurchase,
 }
 
 const BATCH_MAPPERS: Record<string, BatchMapperFn> = {
@@ -90,3 +93,4 @@ export * from './smartscout-subcategory-brands'
 export * from './brand-analytics-customer-loyalty'
 export * from './sns-dashboard-daily'
 export * from './sns-dashboard-snapshots'
+export * from './repeat-purchase'

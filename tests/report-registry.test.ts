@@ -34,19 +34,20 @@ const LIVE_SCHEMA: Record<string, string[]> = {
   scale_insights_rule_assignments: ['snapshot_date'],
   sns_dashboard_daily: ['metric_date', 'metric'],
   sns_dashboard_snapshots: ['snapshot_date', 'report'],
+  brand_analytics_repeat_purchase: ['reporting_date', 'level'],
 }
 
 // ---------------------------------------------------------------------------
 // Seed integrity
 // ---------------------------------------------------------------------------
 
-test('seed: 45 rows, unique keys, valid enums, 42 active / 3 planned', async () => {
+test('seed: 46 rows, unique keys, valid enums, 44 active / 2 planned', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  assert.equal(REPORT_REGISTRY_SEED.length, 45) // +8 S&S Dashboard rows (INB-144)
+  assert.equal(REPORT_REGISTRY_SEED.length, 46) // INB-141: −1 planned placeholder, +2 active repeat-purchase rows
   const keys = new Set(REPORT_REGISTRY_SEED.map(r => r.report_key))
-  assert.equal(keys.size, 45, 'report_keys are unique')
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 42)
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => !r.is_active).length, 3)
+  assert.equal(keys.size, 46, 'report_keys are unique')
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 44)
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => !r.is_active).length, 2)
   const GROUPS = new Set(['Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save', 'Virtual Bundles', 'SmartScout', 'ScaleInsights'])
   const CADENCES = new Set(['weekly', 'monthly', 'snapshot_weekly', 'ad_hoc'])
   for (const r of REPORT_REGISTRY_SEED) {

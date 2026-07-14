@@ -50,6 +50,9 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
   // ── Brand Analytics ─────────────────────────────────────────────────────────
   { report_key: 'sqp_weekly', display_name: 'Search Query Performance', source_group: 'Brand Analytics', cadence: 'weekly', pull_period: 'Latest week', target_table: 'search_query_performance', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Weekly from May 2026; table also holds 12 monthly-era periods (May 2025 – Apr 2026).' },
   { report_key: 'customer_loyalty', display_name: 'Customer Loyalty Analytics', source_group: 'Brand Analytics', cadence: 'weekly', pull_period: 'Latest week', target_table: 'brand_analytics_customer_loyalty', discriminator: { column: 'granularity', values: ['weekly'] }, requires_period_dates: false, is_active: true, sort_order: 2, notes: 'Weekly pull is the tracked report; monthly history exists in-table. A monthly upload derives NO report_key (logged NULL + warning).' },
+  // BA Repeat Purchase Behavior (INB-141): brand + ASIN views share one table, discriminated on level. Replaces the never-ingested planned placeholder ba_repeat_purchase.
+  { report_key: 'ba_repeat_purchase_brand', display_name: 'BA Repeat Purchase — Brand View', source_group: 'Brand Analytics', cadence: 'weekly', pull_period: 'Latest week', target_table: 'brand_analytics_repeat_purchase', discriminator: { column: 'level', values: ['brand'] }, requires_period_dates: false, is_active: true, sort_order: 3, notes: 'Weekly BA export (publication lag like Customer Loyalty). Reporting Date = week-ending Saturday. Line 1 of the export is a metadata preamble.' },
+  { report_key: 'ba_repeat_purchase_asin', display_name: 'BA Repeat Purchase — ASIN View', source_group: 'Brand Analytics', cadence: 'weekly', pull_period: 'Latest week', target_table: 'brand_analytics_repeat_purchase', discriminator: { column: 'level', values: ['asin'] }, requires_period_dates: false, is_active: true, sort_order: 4, notes: 'Weekly BA export (publication lag like Customer Loyalty). Reporting Date = week-ending Saturday. Line 1 of the export is a metadata preamble.' },
 
   // ── Business Reports ──────────────────────────────────────────────────────────
   { report_key: 'business_report_daily', display_name: 'Sales & Traffic (Daily)', source_group: 'Business Reports', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'business_report_daily', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: null },
@@ -96,7 +99,6 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
 
   // ── Planned (not yet ingesting) ───────────────────────────────────────────────
   { report_key: 'ba_top_search_terms', display_name: 'BA Top Search Terms', source_group: 'Brand Analytics', cadence: 'weekly', pull_period: 'Latest week', target_table: 'brand_analytics_top_search_terms', discriminator: null, requires_period_dates: false, is_active: false, sort_order: 3, notes: 'Planned — INB-140. Target table does not exist yet.' },
-  { report_key: 'ba_repeat_purchase', display_name: 'BA Repeat Purchase Behavior', source_group: 'Brand Analytics', cadence: 'ad_hoc', pull_period: null, target_table: 'brand_analytics_repeat_purchase', discriminator: null, requires_period_dates: false, is_active: false, sort_order: 4, notes: 'Planned — INB-141. Target table does not exist yet.' },
   { report_key: 'amc_query_results', display_name: 'AMC Query Results', source_group: 'Brand Analytics', cadence: 'ad_hoc', pull_period: null, target_table: 'amc_query_results', discriminator: null, requires_period_dates: false, is_active: false, sort_order: 5, notes: 'Planned — INB-142. Target table does not exist yet.' },
 ]
 
@@ -216,6 +218,12 @@ export function deriveReportKey(
       const keys = new Set(distinctField(mappedRows, 'metric').map(m => SLUG_TO_KEY[m]).filter(Boolean))
       if (keys.size !== 1) return warn(`S&S Dashboard daily upload spans ${keys.size} reports [${[...keys].join(', ')}] — expected one`)
       return validated([...keys][0], 'S&S Dashboard daily')
+    }
+    // INB-141 — BA Repeat Purchase: one reportType splits to brand/asin by the mapped `level`.
+    case 'brand_analytics_repeat_purchase': {
+      const levels = distinctField(mappedRows, 'level')
+      if (levels.length !== 1) return warn(`repeat purchase upload spans ${levels.length} levels [${levels.join(', ')}] — expected one`)
+      return validated(levels[0] === 'brand' ? 'ba_repeat_purchase_brand' : 'ba_repeat_purchase_asin', 'repeat purchase level')
     }
     case 'sns_dashboard_snapshots': {
       const REPORT_TO_KEY: Record<string, string> = {

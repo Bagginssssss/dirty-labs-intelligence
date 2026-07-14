@@ -50,6 +50,7 @@ const CURRENT_DB_INDEXES = [
   { table_name: 'report_coverage', index_name: 'uq_report_coverage', columns: ['report_key', 'period_start'] },
   { table_name: 'sns_dashboard_daily', index_name: 'uq_sns_dashboard_daily', columns: ['brand_id', 'metric_date', 'metric'] },
   { table_name: 'sns_dashboard_snapshots', index_name: 'uq_sns_dashboard_snapshots', columns: ['brand_id', 'snapshot_date', 'report', 'dim1', 'dim2'] },
+  { table_name: 'brand_analytics_repeat_purchase', index_name: 'uq_brand_analytics_repeat_purchase', columns: ['brand_id', 'reporting_date', 'level', 'asin'] },
 ]
 
 // ---------------------------------------------------------------------------

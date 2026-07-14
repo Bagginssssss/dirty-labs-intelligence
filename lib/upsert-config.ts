@@ -40,6 +40,8 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   // INB-144 — S&S Dashboard: daily long form + shared snapshot table (migration 047).
   sns_dashboard_daily:             'brand_id,metric_date,metric',
   sns_dashboard_snapshots:         'brand_id,snapshot_date,report,dim1,dim2',
+  // INB-141 — BA Repeat Purchase: brand + ASIN views in one table (migration 048).
+  brand_analytics_repeat_purchase: 'brand_id,reporting_date,level,asin',
 }
 
 // Everything the constraint checker must cover: the ingest map above PLUS conflict

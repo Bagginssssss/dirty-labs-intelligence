@@ -26,6 +26,8 @@ export const REQUIRED_NOT_NULL: Record<string, string[]> = {
   // INB-144 — S&S Dashboard: reject a row whose key columns didn't map.
   sns_dashboard_daily: ['metric_date', 'metric'],
   sns_dashboard_snapshots: ['snapshot_date', 'report'],
+  // INB-141 — BA Repeat Purchase: reporting_date + level are the key discriminators.
+  brand_analytics_repeat_purchase: ['reporting_date', 'level'],
 }
 
 export interface RejectedRow {
