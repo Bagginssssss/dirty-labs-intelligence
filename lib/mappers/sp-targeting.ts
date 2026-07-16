@@ -86,8 +86,9 @@ export function mapSpTargeting(row: RawRow, brandId: string, context?: MapperCon
     // Amazon uses "Start Date" not "Date" in this report format.
     report_date: parseDate(get('', 'Start Date', 'start_date', 'Date', 'date', 'report_date')),
 
-    targeting:  get(null as unknown as string, 'Targeting',  'targeting')  || null,
-    match_type: get(null as unknown as string, 'Match Type', 'match_type') || null,
+    // INB-151: key columns are NOT NULL DEFAULT '' — emit '' (not null) when absent.
+    targeting:  get('', 'Targeting',  'targeting'),
+    match_type: get('', 'Match Type', 'match_type'),
     ad_type:    adType,
 
     impressions: parseInteger(get('', 'Impressions', 'impressions')),

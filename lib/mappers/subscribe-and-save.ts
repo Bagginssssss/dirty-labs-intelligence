@@ -33,7 +33,7 @@ export function mapSubscribeAndSave(row: RawRow, brandId: string, context?: Mapp
     report_date:    parseDate(get('', 'Reporting Period Start', 'Date', 'date', 'report_date', 'month')),
     date_range_end: parseDate(get('', 'Reporting Period End',   'date_range_end')),
 
-    sku:          get(null as unknown as string, 'SKU',          'sku')          || null,
+    sku:          get('', 'SKU',          'sku'),  // INB-151: key column, NOT NULL DEFAULT ''
     fulfilled_by: get(null as unknown as string, 'Fulfilled by', 'fulfilled_by') || null,
     category:     get(null as unknown as string, 'Category',     'category')     || null,
 

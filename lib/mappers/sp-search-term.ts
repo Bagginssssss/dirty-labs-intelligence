@@ -67,8 +67,9 @@ export function mapSpSearchTerm(row: RawRow, brandId: string, context?: MapperCo
 
     report_date: parseDate(get('', 'Date', 'date', 'report_date', 'Start Date', 'start_date')),
 
-    customer_search_term: get(null as unknown as string, 'Customer Search Term', 'customer_search_term') || null,
-    targeting:  get(null as unknown as string, 'Targeting',  'targeting')  || null,
+    // INB-151: customer_search_term + targeting are key columns, NOT NULL DEFAULT '' — emit '' when absent.
+    customer_search_term: get('', 'Customer Search Term', 'customer_search_term'),
+    targeting:  get('', 'Targeting',  'targeting'),
     match_type: get(null as unknown as string, 'Match Type', 'match_type') || null,
     ad_type: adType,
 

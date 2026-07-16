@@ -58,17 +58,11 @@ export const ALL_UPSERT_CONFLICT_KEYS: Record<string, string> = {
 // column is treated as distinct by Postgres, so overlapping upserts duplicate
 // silently (INB-82 / the SB Attributed Purchases defect). The extended INB-88
 // checker (findNullableUniqueKeyColumns) FAILS on any such table NOT listed here.
-// These 7 are pre-existing and out of INB-149's scope (report-only); each entry
-// records the severity found on 2026-07-09 so the follow-up ticket can prioritise.
-// purchased_product_report is deliberately ABSENT — migration 042 fixed it, so it
-// must stay clean or the checker fails.
-export const NULLABLE_KEY_ALLOWLIST: Record<string, string> = {
-  // scale_insights_bid_log removed — remediated by INB-150 (key rebuilt on
-  // change_value; migrations 043/044). It is now ENFORCED by the checker.
-  scale_insights_keyword_rank:   'latent — 0 NULL-key rows, 0 dupes; harden with NOT NULL DEFAULT. Housekeeping: INB-151.',
-  smartscout_subcategory_brands: 'latent — 0 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
-  sp_campaign_performance:       'latent — 0 NULL-key rows (ad_type always set), 0 dupes. Housekeeping: INB-151.',
-  sp_search_term_report:         'latent — 0 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
-  sp_targeting_report:           'near-latent — 2 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
-  subscribe_and_save:            'latent — 0 NULL-key rows, 0 dupes. Housekeeping: INB-151.',
-}
+//
+// INB-151: EMPTIED. The six formerly-latent tables (sp_targeting_report,
+// sp_campaign_performance, sp_search_term_report, scale_insights_keyword_rank,
+// smartscout_subcategory_brands, subscribe_and_save) were hardened to NOT NULL
+// DEFAULT '' by migration 049, so the checker now enforces this defect class with
+// NO exceptions, account-wide. A new entry here is a regression — add a NOT NULL
+// constraint (NOT NULL DEFAULT '' for text keys) and normalize the mapper instead.
+export const NULLABLE_KEY_ALLOWLIST: Record<string, string> = {}

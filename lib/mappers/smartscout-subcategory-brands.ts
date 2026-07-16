@@ -36,9 +36,11 @@ export function mapSmartscoutSubcategoryBrands(
 
   // The Subcategory Brands report has no per-row subcategory column.
   // Subcategory is provided by the operator via the upload form and passed through context.
+  // INB-151: key column, NOT NULL DEFAULT '' — emit '' when the form value is absent (the
+  // /api/ingest guard requires it in practice, so this is constraint-safety, not a live path).
   const subcategory = context?.subcategory
     ? normalizeSmartscoutSubcategory(context.subcategory)
-    : null
+    : ''
 
   return [{
     brand_id:                brandId,

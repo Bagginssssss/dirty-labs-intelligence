@@ -48,7 +48,7 @@ export function mapScaleInsightsKeywordRank(
   const asin    = get('', 'ASIN', 'asin')
   const title   = get('', 'Title', 'title')
   const sku     = get('', 'SKU', 'sku') || null
-  const keyword = get(null as unknown as string, 'Keyword', 'keyword', 'search_term') || null
+  const keyword = get('', 'Keyword', 'keyword', 'search_term')  // INB-151: key column, NOT NULL DEFAULT ''
 
   const trackedRaw = get('', 'Tracked', 'tracked').trim().toLowerCase()
   const tracked: boolean | null = trackedRaw !== '' ? trackedRaw === 'yes' : null

@@ -163,15 +163,16 @@ test('nullable-key checker: allowlisted table is not flagged; empty nullable set
   )
 })
 
-test('nullable-key allowlist: the remaining latent tables are present; fixed tables are NOT', async () => {
+test('nullable-key allowlist: EMPTY after INB-151 — the six latent tables were hardened, none remain', async () => {
   const { NULLABLE_KEY_ALLOWLIST } = await import('../lib/upsert-config.ts')
-  // scale_insights_bid_log was remediated by INB-150 → removed from the allowlist.
+  // INB-151 rebuilt all six formerly-latent tables to NOT NULL DEFAULT '' (migration 049) and
+  // emptied the allowlist, so the checker enforces the nullable-key class account-wide. Each of
+  // these must now be ABSENT (previously they were required present).
   for (const t of ['scale_insights_keyword_rank', 'smartscout_subcategory_brands',
     'sp_campaign_performance', 'sp_search_term_report', 'sp_targeting_report', 'subscribe_and_save']) {
-    assert.ok(t in NULLABLE_KEY_ALLOWLIST, `${t} allowlisted`)
+    assert.ok(!(t in NULLABLE_KEY_ALLOWLIST), `${t} hardened (INB-151) — no longer allowlisted`)
   }
-  assert.ok(!('purchased_product_report' in NULLABLE_KEY_ALLOWLIST), 'fixed table (INB-149) not allowlisted')
-  assert.ok(!('scale_insights_bid_log' in NULLABLE_KEY_ALLOWLIST), 'fixed table (INB-150) not allowlisted')
+  assert.deepEqual(NULLABLE_KEY_ALLOWLIST, {}, 'allowlist is empty — no exceptions remain')
 })
 
 // ---------------------------------------------------------------------------
