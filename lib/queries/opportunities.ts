@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { fetchAll } from './fetch-all'
 import { OpportunityRow, CompetitorRow } from './types'
 
 type RpcGapRow = {
@@ -64,16 +65,19 @@ export async function getCompetitiveLandscape(
     date = maxData.snapshot_date as string
   }
 
-  const { data, error } = await supabaseAdmin
+  // fetchAll pages past PostgREST's 1,000-row cap: one snapshot across all four subcategories
+  // can reach ~1,800 rows — the same silent-truncation class fixed in the command center.
+  // Stable order: market_share desc, then (brand_name, subcategory) which make the row unique
+  // within this brand + snapshot, so pages never overlap or skip.
+  const data = await fetchAll<Record<string, unknown>>(() => supabaseAdmin
     .from('smartscout_subcategory_brands')
     .select('brand_name, subcategory, market_share, snapshot_date')
     .eq('brand_id', brandId)
     .eq('snapshot_date', date)
     .order('market_share', { ascending: false })
+    .order('brand_name').order('subcategory'))
 
-  if (error) throw new Error(`getCompetitiveLandscape failed: ${error.message}`)
-
-  return (data ?? []).map(r => ({
+  return data.map(r => ({
     brand_name:    r.brand_name as string,
     subcategory:   (r.subcategory as string | null) ?? '',
     market_share:  r.market_share !== null ? Number(r.market_share) : null,

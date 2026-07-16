@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { fetchAll } from './fetch-all'
 import type { SearchTermRow } from './types'
 import { HARVEST_READY_THRESHOLDS, HARVEST_INVESTIGATION_THRESHOLDS } from '@/lib/dashboard/thresholds'
 
@@ -103,15 +104,16 @@ async function fetchAutoTerms(
   // INB-36: campaigns.targeting_type is backfilled (migration 038) and
   // maintained by ingest — detect auto campaigns by the real column, not the
   // SP.A% name convention (live-verified identical sets at switch time).
-  const { data: autoCampaigns, error: autoErr } = await supabaseAdmin
+  // fetchAll pages past PostgREST's 1,000-row cap (id PK = stable unique order); a large account's
+  // auto-campaign set is well under that today but the read must not silently truncate as it grows.
+  const autoCampaigns = await fetchAll<{ id: string }>(() => supabaseAdmin
     .from('campaigns')
     .select('id')
     .eq('brand_id', brandId)
     .eq('targeting_type', 'Automatic targeting')
+    .order('id'))
 
-  if (autoErr) throw new Error(`fetchAutoTerms campaigns failed: ${autoErr.message}`)
-
-  const autoCampaignIds = new Set((autoCampaigns ?? []).map(c => c.id))
+  const autoCampaignIds = new Set(autoCampaigns.map(c => c.id))
   if (autoCampaignIds.size === 0) return []
 
   const rows = await fetchSearchTerms(brandId, startDate, endDate)
