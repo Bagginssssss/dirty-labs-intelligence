@@ -53,4 +53,6 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   sns_dashboard_snapshots:          { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
   // SKU Economics (INB-162) — weekly parent; week_start is the period-start anchor
   sku_economics_weekly:             { periodColumn: 'week_start',      mode: 'weekly',   eventDriven: false },
+  // COGS (INB-162) — effective-dated cost snapshots; ad-hoc, tracked by effective date
+  cogs:                             { periodColumn: 'valid_from',      mode: 'snapshot', eventDriven: false },
 }

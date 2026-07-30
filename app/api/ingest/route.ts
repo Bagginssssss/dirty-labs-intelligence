@@ -5,6 +5,7 @@ import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { unmappedSnsDailyColumns } from '@/lib/mappers/sns-dashboard-daily'
 import { buildSkuEconomicsFees, skuEconomicsWarnings } from '@/lib/mappers/sku-economics'
+import { handleCogsUpload } from '@/lib/cogs-ingest'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
 import { periodStart } from '@/lib/upload-tracker/gaps'
@@ -321,6 +322,19 @@ export async function POST(request: Request) {
       return Response.json({ error: dateRangeError }, { status: 400 })
     }
 
+    // COGS (INB-162): SCD-2 write (close-changed / no-op-unchanged / insert-new) — unlike the
+    // generic upsert path — handled by a dedicated early-return handler. The effective date
+    // (valid_from) is the form's date_range_start; the period-date gate above already required it.
+    if (reportType === 'cogs') {
+      return await handleCogsUpload({
+        brandId,
+        rows: parseResult.rows,
+        rowsReceived,
+        effectiveDate: dateRangeStart,
+        parseErrors: ingestErrors,
+      })
+    }
+
     // INB-144: S&S Dashboard daily detection is greedy (any file with calc_date_granularity),
     // so a metric column absent from the header->slug map must be REJECTED — never silently
     // dropped (guards against Amazon renaming/adding a column). Runs before any mapping/write.
@@ -625,7 +639,7 @@ export async function POST(request: Request) {
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
       rows_deduplicated: rowsDeduplicated,
-      ...(reportType === 'sku_economics_weekly' ? { fee_rows_stored: feeRowsStored } : {}),
+      ...(reportType === 'sku_economics_weekly' ? { fee_rows_stored: feeRowsStored, fee_write_status: feeWriteFailed ? 'failed' : 'ok' } : {}),
       recalc_status: recalcStatus,
       ...(recalcPlan ? { recalc_window: recalcPlan } : {}),
       parse_errors: ingestErrors,

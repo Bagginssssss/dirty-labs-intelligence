@@ -97,6 +97,15 @@ const SIGNATURES: Array<{
       has(h, 'amazon_store'),
   },
   {
+    // COGS unit-cost sheet (INB-162) — internal, CSV export of "Amazon Avg Cost as of ...".
+    // "Internal DL SKU (Primary)" + "Avg/Cost" co-occur nowhere else.
+    reportType: 'cogs',
+    tableName:  'cogs',
+    match: h =>
+      has(h, 'internal_dl_sku') &&
+      has(h, 'avg_cost'),
+  },
+  {
     // Operator's 90-day rolling window VB snapshot export.
     // The file is multi-section: each section starts with a "Week N Report (…)" line,
     // which PapaParse consumes as the header row. After normalize() the first header

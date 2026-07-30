@@ -59,6 +59,8 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
   { report_key: 'business_report_child_asin', display_name: 'Sales & Traffic by Child ASIN', source_group: 'Business Reports', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'business_report', discriminator: null, requires_period_dates: true, is_active: true, sort_order: 2, notes: 'Period-aggregate rows carry no date — requires_period_dates preserves the INB-109 gate.' },
   // INB-162 — SKU Economics: weekly MSKU-level fee economics; child fee lines in sku_economics_fees (migration 050).
   { report_key: 'sku_economics_weekly', display_name: 'SKU Economics (weekly)', source_group: 'Business Reports', cadence: 'weekly', pull_period: 'Prior week (Sun–Sat)', target_table: 'sku_economics_weekly', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 3, notes: 'MSKU-level fee economics; child fee lines in sku_economics_fees. Date is in the file (Start/End date) so no form dates are required. NOT attribution-affected — no rolling re-pull window.' },
+  // INB-162 — COGS unit costs (internal sheet, CSV). SCD-2 write; single effective date on the upload form.
+  { report_key: 'cogs', display_name: 'COGS (Unit Costs)', source_group: 'Business Reports', cadence: 'ad_hoc', pull_period: 'On cost change', target_table: 'cogs', discriminator: null, requires_period_dates: true, is_active: true, sort_order: 4, notes: 'Internal effective-dated unit costs from the operator\'s COGS sheet (CSV). Single effective date supplied on the upload form (valid_from). SCD-2 re-upload: close changed rows, no-op unchanged, insert new. Not an Amazon feed; ad-hoc cadence (no overdue expectation).' },
 
   // ── Subscribe & Save ───────────────────────────────────────────────────────────
   { report_key: 'subscribe_and_save', display_name: 'S&S Performance', source_group: 'Subscribe & Save', cadence: 'monthly', pull_period: 'Latest month', target_table: 'subscribe_and_save', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Overlapping rolling ~30d windows labeled at period start (INB-136 covering-period semantics).' },
@@ -178,6 +180,7 @@ export function deriveReportKey(
     case 'business_report_daily': return { reportKey: 'business_report_daily' }
     case 'business_report':       return { reportKey: 'business_report_child_asin' }
     case 'sku_economics_weekly':  return { reportKey: 'sku_economics_weekly' }
+    case 'cogs':                  return { reportKey: 'cogs' }
     case 'subscribe_and_save':    return { reportKey: 'subscribe_and_save' }
 
     case 'virtual_bundle_sales_snapshots': return { reportKey: 'vb_sales_summary' }

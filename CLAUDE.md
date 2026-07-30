@@ -11,7 +11,7 @@ Agentic PPC manager — not primarily a dashboard. AI agent understands Dirty La
 - Live URL: https://dirty-labs-intelligence.vercel.app
 - GitHub: https://github.com/Bagginssssss/dirty-labs-intelligence
 - Local: /Users/darrenbilbao/dirty-labs-intelligence
-- Current migration: 023
+- Current migration: 051
 
 ## Tech Stack
 - Next.js 16, TypeScript, Tailwind CSS, App Router
@@ -110,15 +110,25 @@ app/
     analyze/route.ts     — POST AI analysis endpoint, all analysis types
     calculate-metrics/route.ts — POST derived metrics calculation
     health/route.ts      — GET health check
-supabase/migrations/     — 023 migration files (001–023)
+supabase/migrations/     — 051 migration files (001–051)
 ```
 
-## Database Tables (23 migrations)
+## Database Tables (51 migrations)
 - Reference: brands, asins, campaigns, ad_groups
 - Reports: sp_search_term_report, sp_targeting_report, sp_campaign_performance,
            business_report, purchased_product_report, scale_insights_bid_log,
            scale_insights_keyword_rank, subscribe_and_save, search_query_performance,
            smartscout_subcategory_products, smartscout_subcategory_brands
+- Fees/COGS (INB-162): sku_economics_weekly (weekly MSKU fee economics; Amazon Net
+           proceeds is PRE-COGS), sku_economics_fees (long fee lines; component rollup:
+           Base fulfillment + Fuel surcharge = FBA fulfillment fees), cogs (internal
+           effective-dated unit costs, internal_sku-primary = MSKU base, SCD-2 write)
+- Profitability views (INB-162, migration 051): sku_profitability_weekly (msku),
+           _monthly, _yearly, _weekly_by_asin, _weekly_by_parent_asin. net_profit =
+           net_proceeds − net_units×unit_cost (COGS on NET units — flatters high-return/
+           destroyed-return SKUs). cogs_missing = "cost needed (net_units<>0) & not found"
+           → net_profit NULL, never treated as 0. COGS joined on split_part(msku,'-',1) =
+           internal_sku (MSKU base), msku-exact override preferred.
 - Derived: derived_metrics_daily, derived_metrics_weekly, derived_asin_metrics_daily
 - Memory: platform_insights, platform_knowledge, platform_watchlist
 - System: goals, report_ingestion_log

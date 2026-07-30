@@ -36,18 +36,19 @@ const LIVE_SCHEMA: Record<string, string[]> = {
   sns_dashboard_snapshots: ['snapshot_date', 'report'],
   brand_analytics_repeat_purchase: ['reporting_date', 'level'],
   sku_economics_weekly: ['week_start', 'marketplace', 'msku'],
+  cogs: ['internal_sku'],
 }
 
 // ---------------------------------------------------------------------------
 // Seed integrity
 // ---------------------------------------------------------------------------
 
-test('seed: 47 rows, unique keys, valid enums, 45 active / 2 planned', async () => {
+test('seed: 48 rows, unique keys, valid enums, 46 active / 2 planned', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  assert.equal(REPORT_REGISTRY_SEED.length, 47) // INB-162: +1 active sku_economics_weekly row
+  assert.equal(REPORT_REGISTRY_SEED.length, 48) // INB-162: +sku_economics_weekly +cogs (both active)
   const keys = new Set(REPORT_REGISTRY_SEED.map(r => r.report_key))
-  assert.equal(keys.size, 47, 'report_keys are unique')
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 45)
+  assert.equal(keys.size, 48, 'report_keys are unique')
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 46)
   assert.equal(REPORT_REGISTRY_SEED.filter(r => !r.is_active).length, 2)
   const GROUPS = new Set(['Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save', 'Virtual Bundles', 'SmartScout', 'ScaleInsights'])
   const CADENCES = new Set(['weekly', 'monthly', 'snapshot_weekly', 'ad_hoc'])
@@ -57,10 +58,10 @@ test('seed: 47 rows, unique keys, valid enums, 45 active / 2 planned', async () 
   }
 })
 
-test('seed: requires_period_dates on exactly 14 rows', async () => {
+test('seed: requires_period_dates on exactly 15 rows', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  // 11 + the 3 S&S Dashboard snapshot reports (INB-144).
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.requires_period_dates).length, 14)
+  // 11 + the 3 S&S Dashboard snapshot reports (INB-144) + cogs (INB-162).
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.requires_period_dates).length, 15)
 })
 
 test('seed: every active target_table exists and every discriminator column is real', async () => {
@@ -117,6 +118,7 @@ test('derive: business + S&S + VB static keys', async () => {
   assert.equal((await derive('business_report', [], [{}])).reportKey, 'business_report_child_asin')
   assert.equal((await derive('business_report_daily', [], [{}])).reportKey, 'business_report_daily')
   assert.equal((await derive('sku_economics_weekly', [], [{}])).reportKey, 'sku_economics_weekly')
+  assert.equal((await derive('cogs', [], [{}])).reportKey, 'cogs')
   assert.equal((await derive('subscribe_and_save', [], [{}])).reportKey, 'subscribe_and_save')
   assert.equal((await derive('search_query_performance', [], [{}])).reportKey, 'sqp_weekly')
   assert.equal((await derive('virtual_bundle_sales_snapshots', [], [{}])).reportKey, 'vb_sales_summary')
