@@ -76,8 +76,10 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
 
     const latest = rows.reduce<CoverageRowDb | null>((m, c) => (m === null || c.period_end > m.period_end ? c : m), null)
 
+    const weekAnchoredAtStart = cfg?.weekAnchoredAtStart ?? false
+
     const status = deriveStatus({
-      mode, cadence: r.cadence, isActive: r.is_active, eventDriven, coverageEnds, lastUploadAt, today,
+      mode, cadence: r.cadence, isActive: r.is_active, eventDriven, coverageEnds, lastUploadAt, today, weekAnchoredAtStart,
     })
 
     return {
@@ -97,13 +99,17 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
       latestDataThrough: latest?.data_through ?? null,
       periodLine: freshnessLine({
         mode,
+        cadence: r.cadence,
         coveringWindowDays: cfg?.coveringWindowDays ?? null,
+        weekAnchoredAtStart,
         latestPeriodEnd: latest?.period_end ?? null,
         latestPeriodLabel: latest?.period_label ?? null,
         latestDataThrough: latest?.data_through ?? null,
       }),
       lastUploadAt,
-      strip: r.is_active && mode
+      // ad_hoc reports (COGS) aren't a periodic series — a strip of one effective date reads as a
+      // broken empty grey bar, so suppress it (INB-162 addendum 2).
+      strip: r.is_active && mode && r.cadence !== 'ad_hoc'
         ? buildStrip({ mode, eventDriven, coverageEnds, today, coveringWindowDays: cfg?.coveringWindowDays ?? null })
         : [],
     }

@@ -22,6 +22,14 @@ export type CoverageTableConfig = {
   // Covering-window reports (S&S): each snapshot represents a rolling window of this many
   // days from its date. Drives the tile's "Window X → Y" copy (INB-147). Absent = a point.
   coveringWindowDays?: number
+  // Weekly reports whose single row is anchored at the period START (periodColumn = a Sunday
+  // week_start), so data_through == period_start by construction — the one row already covers
+  // the whole Sun–Sat week. Every OTHER weekly report is either daily-grained (data flows
+  // through the week) or END-anchored (report_date = the Saturday), so its data_through reaches
+  // the period end. Without this flag the status/freshness logic mistakes a start-anchored
+  // completed week for a perpetually-partial one (data_through is 6 days short of the Saturday)
+  // → permanent false OVERDUE + a "Data through <week_start>" label. INB-162 addendum 2.
+  weekAnchoredAtStart?: boolean
 }
 
 export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
@@ -51,8 +59,9 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   // Subscribe & Save Dashboard (INB-144) — dailies bucketed to weeks; snapshots point-in-time
   sns_dashboard_daily:              { periodColumn: 'metric_date',     mode: 'weekly',   eventDriven: false },
   sns_dashboard_snapshots:          { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
-  // SKU Economics (INB-162) — weekly parent; week_start is the period-start anchor
-  sku_economics_weekly:             { periodColumn: 'week_start',      mode: 'weekly',   eventDriven: false },
+  // SKU Economics (INB-162) — weekly parent; week_start is the period-START anchor (one row
+  // per week), so the tile logic treats a completed week as fully pulled (weekAnchoredAtStart).
+  sku_economics_weekly:             { periodColumn: 'week_start',      mode: 'weekly',   eventDriven: false, weekAnchoredAtStart: true },
   // COGS (INB-162) — effective-dated cost snapshots; ad-hoc, tracked by effective date
   cogs:                             { periodColumn: 'valid_from',      mode: 'snapshot', eventDriven: false },
 }

@@ -112,6 +112,10 @@ export function deriveStatus(p: {
   coverageEnds: CoverageEnd[]
   lastUploadAt: string | null
   today: string
+  // Start-anchored weekly reports (INB-162): the single weekly row covers the whole Sun–Sat
+  // week, so a completed week is fully pulled regardless of data_through (which is the week
+  // START, 6 days short of the Saturday). Scoped to sku_economics_weekly via COVERAGE_CONFIG.
+  weekAnchoredAtStart?: boolean
 }): TileStatus {
   if (!p.isActive) return 'planned'
   if (p.cadence === 'ad_hoc') return 'ad_hoc'
@@ -147,8 +151,11 @@ export function deriveStatus(p: {
   const tol = STATUS_CONFIG.weekly.dataToleranceDays
   const weekly = p.coverageEnds.filter(e => e.periodType === 'weekly')
   const sats = new Set(weekly.map(e => e.periodEnd))
+  // A completed week counts as "fully pulled" when data reaches within tolerance of its
+  // Saturday — OR always, for start-anchored reports whose one row already covers the week.
   const fullSats = weekly
-    .filter(e => e.periodEnd <= expected && e.dataThrough != null && e.dataThrough >= addDays(e.periodEnd, -tol))
+    .filter(e => e.periodEnd <= expected &&
+      (p.weekAnchoredAtStart || (e.dataThrough != null && e.dataThrough >= addDays(e.periodEnd, -tol))))
     .map(e => e.periodEnd)
   const lastFull = fullSats.length ? fullSats.reduce((a, b) => (a > b ? a : b)) : null
 
@@ -253,19 +260,29 @@ export function relTimeLabel(iso: string | null, today: string): string {
 }
 
 // The tile's "period" line — data-freshness phrasing driven by data_through.
-// Covering-window reports (S&S) show the window; monthly shows the month label (its raw
-// max-source-date is misleading for an aggregate); weekly/snapshot show data_through.
+// ad_hoc (COGS) shows the effective date ("Effective from"); covering-window (S&S) shows the
+// window; monthly shows the month label (its raw max-source-date misleads for an aggregate);
+// start-anchored weekly shows the period END (its data_through is the week START); everything
+// else shows data_through.
 export function freshnessLine(p: {
   mode: CoverageMode | undefined
+  cadence?: string
   coveringWindowDays: number | null
+  weekAnchoredAtStart?: boolean
   latestPeriodEnd: string | null
   latestPeriodLabel: string | null
   latestDataThrough: string | null
 }): string {
+  if (p.cadence === 'ad_hoc') {
+    return p.latestDataThrough ? `Effective from ${p.latestDataThrough}` : '—'
+  }
   if (p.coveringWindowDays && p.latestPeriodEnd) {
     return `Window ${p.latestPeriodEnd} → ${addDays(p.latestPeriodEnd, p.coveringWindowDays)}`
   }
   if (p.mode === 'monthly') return p.latestPeriodLabel ? `Data through ${p.latestPeriodLabel}` : '—'
+  // Start-anchored weekly: the row covers the whole week, so "through" is the Saturday, not the
+  // stored week_start.
+  if (p.weekAnchoredAtStart) return p.latestPeriodEnd ? `Data through ${p.latestPeriodEnd}` : '—'
   return p.latestDataThrough ? `Data through ${p.latestDataThrough}` : '—'
 }
 

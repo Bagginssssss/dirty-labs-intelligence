@@ -85,6 +85,58 @@ test('weekly overdue: latest covered but a hole in the last 8 weeks', () => {
   assert.equal(deriveStatus({ ...base, cadence: 'weekly', coverageEnds: ends }), 'overdue')
 })
 
+// ── INB-162 addendum 2: start-anchored weekly (SKU Economics) ────────────────────
+// data_through is the week START (Sunday), 6 days short of the Saturday. Without
+// weekAnchoredAtStart the completed week reads as perpetually partial → false OVERDUE.
+function startAnchoredEnds(end: string, n: number): CoverageEnd[] {
+  return weeklyEnds(end, n).map(e => ({ ...e, dataThrough: addDays(e.periodEnd, -6) }))
+}
+
+test('start-anchored weekly: completed week (data_through = week start) → CURRENT on 2026-07-29', () => {
+  // Coverage through W/E 2026-07-25 (data_through 2026-07-19). 2026-07-29 (Wed) → expected 07-25.
+  const ends = startAnchoredEnds('2026-07-25', 12)
+  assert.equal(
+    deriveStatus({ ...base, today: '2026-07-29', cadence: 'weekly', coverageEnds: ends, weekAnchoredAtStart: true }),
+    'current',
+  )
+})
+
+test('start-anchored regression: WITHOUT the flag the same coverage is (wrongly) overdue — flag is load-bearing & scoped', () => {
+  const ends = startAnchoredEnds('2026-07-25', 12)
+  assert.equal(
+    deriveStatus({ ...base, today: '2026-07-29', cadence: 'weekly', coverageEnds: ends }), // weekAnchoredAtStart omitted
+    'overdue',
+  )
+})
+
+test('start-anchored weekly: a newer complete week now exists (08-01 unuploaded) → not current', () => {
+  const ends = startAnchoredEnds('2026-07-25', 12) // still only through 07-25
+  // 2026-08-04 (Tue): expected 08-01, owed 3 days → due (within the 3-day weekly grace).
+  assert.equal(
+    deriveStatus({ ...base, today: '2026-08-04', cadence: 'weekly', coverageEnds: ends, weekAnchoredAtStart: true }),
+    'due',
+  )
+  // 2026-08-06 (Thu): owed 5 days past 08-01 → overdue.
+  assert.equal(
+    deriveStatus({ ...base, today: '2026-08-06', cadence: 'weekly', coverageEnds: ends, weekAnchoredAtStart: true }),
+    'overdue',
+  )
+})
+
+test('freshnessLine: start-anchored weekly shows the period END, not the stored week_start', () => {
+  assert.equal(
+    freshnessLine({ mode: 'weekly', coveringWindowDays: null, weekAnchoredAtStart: true, latestPeriodEnd: '2026-07-25', latestPeriodLabel: 'W/E 2026-07-25', latestDataThrough: '2026-07-19' }),
+    'Data through 2026-07-25',
+  )
+})
+
+test('freshnessLine: ad_hoc (COGS) shows "Effective from <date>", not "Data through"', () => {
+  assert.equal(
+    freshnessLine({ mode: 'snapshot', cadence: 'ad_hoc', coveringWindowDays: null, latestPeriodEnd: '2026-01-01', latestPeriodLabel: '2026-01-01', latestDataThrough: '2026-01-01' }),
+    'Effective from 2026-01-01',
+  )
+})
+
 test('monthly current: last completed month covered', () => {
   assert.equal(deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', coverageEnds: [month('2026-06-30')] }), 'current')
 })
