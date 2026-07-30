@@ -11,7 +11,7 @@ Agentic PPC manager — not primarily a dashboard. AI agent understands Dirty La
 - Live URL: https://dirty-labs-intelligence.vercel.app
 - GitHub: https://github.com/Bagginssssss/dirty-labs-intelligence
 - Local: /Users/darrenbilbao/dirty-labs-intelligence
-- Current migration: 051
+- Current migration: 053
 
 ## Tech Stack
 - Next.js 16, TypeScript, Tailwind CSS, App Router
@@ -110,10 +110,10 @@ app/
     analyze/route.ts     — POST AI analysis endpoint, all analysis types
     calculate-metrics/route.ts — POST derived metrics calculation
     health/route.ts      — GET health check
-supabase/migrations/     — 051 migration files (001–051)
+supabase/migrations/     — 053 migration files (001–053)
 ```
 
-## Database Tables (51 migrations)
+## Database Tables (53 migrations)
 - Reference: brands, asins, campaigns, ad_groups
 - Reports: sp_search_term_report, sp_targeting_report, sp_campaign_performance,
            business_report, purchased_product_report, scale_insights_bid_log,
@@ -129,6 +129,21 @@ supabase/migrations/     — 051 migration files (001–051)
            destroyed-return SKUs). cogs_missing = "cost needed (net_units<>0) & not found"
            → net_profit NULL, never treated as 0. COGS joined on split_part(msku,'-',1) =
            internal_sku (MSKU base), msku-exact override preferred.
+- Customer Voice (INB-160): fba_customer_returns (Amazon FBA Customer Returns; one row
+           per returned unit; Windows-1252 flat file — the loader's decodeFileContent
+           has a strict-UTF-8→windows-1252 fallback; NO natural key, unique on
+           (brand_id, return_ts, order_id, sku, lpn, occurrence) where occurrence =
+           row-number within identical-row groups computed at map time → idempotent
+           since return history is immutable; comments stored raw), return_reason_map
+           (22-code reason→fault bucket seed; mirror lib/return-reason-map.ts; the LIVE
+           join is authoritative, the row fault_class is an ingest-time snapshot).
+           (amazon_reviews + amazon_rating_snapshots DEFERRED — later session.)
+- NCX-proxy view (INB-160, migration 053): sku_return_rates — weekly product-fault
+           return rate per SKU, Sunday-anchored (return_date − DOW) to match
+           sku_economics_weekly; product-fault via LIVE return_reason_map join;
+           denominator units_sold from sku_economics_weekly at (week, msku=sku); rates
+           NULL where no sales row. PERIOD-RATE PROXY (return week ≠ sale week) and
+           excludes refunds-without-return + CS contacts → won't match Amazon's NCX.
 - Derived: derived_metrics_daily, derived_metrics_weekly, derived_asin_metrics_daily
 - Memory: platform_insights, platform_knowledge, platform_watchlist
 - System: goals, report_ingestion_log
