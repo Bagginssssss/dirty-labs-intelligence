@@ -30,6 +30,10 @@ export const REQUIRED_NOT_NULL: Record<string, string[]> = {
   brand_analytics_repeat_purchase: ['reporting_date', 'level'],
   // INB-160 — FBA Customer Returns: return_ts is the timestamp key + the source of return_date.
   fba_customer_returns: ['return_ts'],
+  // INB-160 — Amazon Reviews: review_id is the upsert key + cross-child dedup basis. Rating
+  // snapshots need asin + snapshot_date (built clean by the mapper; listed for parity/the checker).
+  amazon_reviews: ['review_id'],
+  amazon_rating_snapshots: ['asin', 'snapshot_date'],
 }
 
 export interface RejectedRow {

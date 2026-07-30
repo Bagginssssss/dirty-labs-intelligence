@@ -56,6 +56,10 @@ const CURRENT_DB_INDEXES = [
   { table_name: 'sku_economics_weekly', index_name: 'uq_sku_economics_weekly', columns: ['brand_id', 'week_start', 'marketplace', 'msku'] },
   // INB-160 — FBA Customer Returns (migration 052). occurrence disambiguates identical multi-unit rows.
   { table_name: 'fba_customer_returns', index_name: 'uq_fba_customer_returns', columns: ['brand_id', 'return_ts', 'order_id', 'sku', 'lpn', 'occurrence'] },
+  // INB-160 — Amazon Reviews + Rating Snapshots (migration 054). review_id dedupes across a
+  // parent's child ASINs; snapshots append per (asin, run). Written by lib/reviews-ingest.ts.
+  { table_name: 'amazon_reviews', index_name: 'uq_amazon_reviews', columns: ['brand_id', 'review_id'] },
+  { table_name: 'amazon_rating_snapshots', index_name: 'uq_amazon_rating_snapshots', columns: ['brand_id', 'asin', 'snapshot_date'] },
 ]
 
 // ---------------------------------------------------------------------------

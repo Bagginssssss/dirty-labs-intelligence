@@ -11,7 +11,7 @@ Agentic PPC manager — not primarily a dashboard. AI agent understands Dirty La
 - Live URL: https://dirty-labs-intelligence.vercel.app
 - GitHub: https://github.com/Bagginssssss/dirty-labs-intelligence
 - Local: /Users/darrenbilbao/dirty-labs-intelligence
-- Current migration: 053
+- Current migration: 055
 
 ## Tech Stack
 - Next.js 16, TypeScript, Tailwind CSS, App Router
@@ -110,10 +110,10 @@ app/
     analyze/route.ts     — POST AI analysis endpoint, all analysis types
     calculate-metrics/route.ts — POST derived metrics calculation
     health/route.ts      — GET health check
-supabase/migrations/     — 053 migration files (001–053)
+supabase/migrations/     — 055 migration files (001–055)
 ```
 
-## Database Tables (53 migrations)
+## Database Tables (55 migrations)
 - Reference: brands, asins, campaigns, ad_groups
 - Reports: sp_search_term_report, sp_targeting_report, sp_campaign_performance,
            business_report, purchased_product_report, scale_insights_bid_log,
@@ -137,13 +137,32 @@ supabase/migrations/     — 053 migration files (001–053)
            since return history is immutable; comments stored raw), return_reason_map
            (22-code reason→fault bucket seed; mirror lib/return-reason-map.ts; the LIVE
            join is authoritative, the row fault_class is an ingest-time snapshot).
-           (amazon_reviews + amazon_rating_snapshots DEFERRED — later session.)
+- Reviews (INB-160, migration 054): amazon_reviews (Axesso Apify actor JSON export —
+           NOT CSV; the route sniffs a leading '['/'{' and early-returns into the bespoke
+           lib/reviews-ingest.ts, like COGS; one file → TWO tables like SKU Economics).
+           Upsert on (brand_id, review_id): reviews are SHARED across a parent's child
+           ASINs, so review_id dedupes alone (asin last-write; variation_id = variant
+           bought). date "Reviewed in <country> on <US-month date>" → review_country +
+           review_date; rating "N.N out of 5 stars" → numeric; image/videoUrlList →
+           counts; variationList → jsonb; profilePath + run metadata dropped.
+           amazon_rating_snapshots (upsert (brand_id, asin, snapshot_date), append per
+           run) — product rating/star-mix, written ONLY from UNFILTERED runs (per-item
+           filters.filterByStar absent; countReviews is filter-dependent). snapshot_date =
+           run date (form date, else ingest date). Run list: lib/reviews/run-config.ts (11
+           child ASINs, one per parent family, derived from the parent_asin map; refresh
+           query inline). Backfill plan: docs/reviews-backfill-runplan.md (Amazon caps
+           public pagination ~10 pages/filter → star×sort permutations for history).
 - NCX-proxy view (INB-160, migration 053): sku_return_rates — weekly product-fault
            return rate per SKU, Sunday-anchored (return_date − DOW) to match
            sku_economics_weekly; product-fault via LIVE return_reason_map join;
            denominator units_sold from sku_economics_weekly at (week, msku=sku); rates
            NULL where no sales row. PERIOD-RATE PROXY (return week ≠ sale week) and
            excludes refunds-without-return + CS contacts → won't match Amazon's NCX.
+- Review trend views (INB-160, migration 055): amazon_review_trend (weekly incoming-
+           review count + avg rating per ASIN, Sunday-anchored on review_date — WHEN
+           written, not pulled), amazon_rating_trend (rating/star-mix per ASIN with LAG
+           deltas vs prior snapshot; ≥2 snapshots needed for non-NULL deltas). Both
+           service_role-only.
 - Derived: derived_metrics_daily, derived_metrics_weekly, derived_asin_metrics_daily
 - Memory: platform_insights, platform_knowledge, platform_watchlist
 - System: goals, report_ingestion_log

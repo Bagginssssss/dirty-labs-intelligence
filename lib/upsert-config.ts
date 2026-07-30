@@ -48,6 +48,11 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   // INB-160 — FBA Customer Returns (migration 052). occurrence disambiguates identical
   // multi-unit rows; return history is immutable so overlapping pulls stay idempotent.
   fba_customer_returns:            'brand_id,return_ts,order_id,sku,lpn,occurrence',
+  // INB-160 — Amazon Reviews + Rating Snapshots (migration 054). Written by the bespoke JSON
+  // handler (lib/reviews-ingest.ts), which imports these keys for its onConflict — a review_id is
+  // shared across a parent's child ASINs, so it dedupes alone; snapshots append per (asin, run).
+  amazon_reviews:                  'brand_id,review_id',
+  amazon_rating_snapshots:         'brand_id,asin,snapshot_date',
 }
 
 // Everything the constraint checker must cover: the ingest map above PLUS conflict

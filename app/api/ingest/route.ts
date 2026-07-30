@@ -7,6 +7,7 @@ import { unmappedSnsDailyColumns } from '@/lib/mappers/sns-dashboard-daily'
 import { buildSkuEconomicsFees, skuEconomicsWarnings } from '@/lib/mappers/sku-economics'
 import { fbaReturnsWarnings } from '@/lib/mappers/fba-customer-returns'
 import { handleCogsUpload } from '@/lib/cogs-ingest'
+import { handleReviewsUpload, validateReviewsPayload } from '@/lib/reviews-ingest'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
 import { periodStart } from '@/lib/upload-tracker/gaps'
@@ -270,6 +271,37 @@ export async function POST(request: Request) {
     // decodeFileContent handles UTF-8 BOM (today's exports) and guards against a
     // future UTF-16 export; plain UTF-8 falls through to file.text().
     const content = await decodeFileContent(file)
+
+    // INB-160 — the Axesso reviews export is JSON (a flat array), not CSV: the header detector +
+    // RawRow=Record<string,string> mapper contract can't ingest it. Sniff a leading '['/'{' and
+    // hand off to the bespoke JSON handler (two tables from one file), mirroring the COGS
+    // early-return. The CSV path below is untouched for every other report type.
+    if (content.trimStart().startsWith('[') || content.trimStart().startsWith('{')) {
+      // Reuse the plausibility guard so a garbage run date can't stamp snapshot_date.
+      const jsonDateError = periodDateRangeError(dateRangeStart, dateRangeEnd)
+      if (jsonDateError) return Response.json({ error: jsonDateError }, { status: 400 })
+
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(content)
+      } catch (e) {
+        return Response.json({ error: `File looks like JSON but failed to parse: ${(e as Error).message}` }, { status: 400 })
+      }
+      const check = validateReviewsPayload(parsed)
+      if (check.error || !check.items) {
+        return Response.json({ error: check.error ?? 'Unrecognized JSON payload.' }, { status: 400 })
+      }
+      const todayIso = new Date().toISOString().slice(0, 10)
+      return await handleReviewsUpload({
+        brandId,
+        items: check.items,
+        rowsReceived: check.items.length,
+        runDate: dateRangeStart || todayIso,   // rating-snapshot snapshot_date (form date, else today)
+        filename: file.name,
+        parseErrors: ingestErrors,
+      })
+    }
+
     const parseResult = parseCSV(content)
     rowsReceived = parseResult.rowCount
     if (parseResult.errors.length) ingestErrors.push(...parseResult.errors.slice(0, 10))

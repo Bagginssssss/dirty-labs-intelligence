@@ -66,4 +66,8 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   cogs:                             { periodColumn: 'valid_from',      mode: 'snapshot', eventDriven: false },
   // FBA Customer Returns (INB-160) — daily return dates bucketed to weeks (not start-anchored)
   fba_customer_returns:             { periodColumn: 'return_date',     mode: 'weekly',   eventDriven: false },
+  // Amazon Reviews (INB-160) — pull cadence tracked by scraped_at (the run marker), NOT review_date
+  // (which spans the full public review history). Rating snapshots by run snapshot_date. Both monthly.
+  amazon_reviews:                   { periodColumn: 'scraped_at',      mode: 'monthly',  eventDriven: false },
+  amazon_rating_snapshots:          { periodColumn: 'snapshot_date',   mode: 'monthly',  eventDriven: false },
 }

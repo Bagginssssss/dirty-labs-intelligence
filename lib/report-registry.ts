@@ -103,6 +103,8 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
 
   // ── Customer Voice (INB-160) ──────────────────────────────────────────────────
   { report_key: 'fba_customer_returns', display_name: 'FBA Customer Returns', source_group: 'Customer Voice', cadence: 'weekly', pull_period: 'Full history / weekly top-up', target_table: 'fba_customer_returns', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Seller Central Customer Returns flat file (Windows-1252). Full history in one pull; weekly top-up overlaps and is idempotent via the occurrence key. Date is in the file. Basis for the sku_return_rates NCX proxy.' },
+  { report_key: 'amazon_reviews', display_name: 'Amazon Reviews', source_group: 'Customer Voice', cadence: 'monthly', pull_period: 'Monthly unfiltered + ad-hoc backfill', target_table: 'amazon_reviews', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 2, notes: 'Axesso Apify actor JSON export (manual weekly/monthly upload). Upsert on (brand_id, review_id) — reviews are shared across a parent\'s child ASINs; ad-hoc pulls are idempotent. requires_period_dates=false: reviews carry their own review_date; the form date only sets rating-snapshot snapshot_date (defaults to ingest date).' },
+  { report_key: 'amazon_rating_snapshots', display_name: 'Amazon Rating Snapshots', source_group: 'Customer Voice', cadence: 'monthly', pull_period: 'Monthly unfiltered runs only', target_table: 'amazon_rating_snapshots', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 3, notes: 'Product-level rating/star-mix snapshots, extracted from the same unfiltered Axesso run that feeds amazon_reviews (countReviews is filter-dependent, so star-filtered backfill runs write NO snapshots). Separate tile: snapshot freshness diverges from reviews freshness. snapshot_date = run date (form date_range_start, else ingest date).' },
 
   // ── Planned (not yet ingesting) ───────────────────────────────────────────────
   { report_key: 'ba_top_search_terms', display_name: 'BA Top Search Terms', source_group: 'Brand Analytics', cadence: 'weekly', pull_period: 'Latest week', target_table: 'brand_analytics_top_search_terms', discriminator: null, requires_period_dates: false, is_active: false, sort_order: 3, notes: 'Planned — INB-140. Target table does not exist yet.' },
@@ -185,6 +187,10 @@ export function deriveReportKey(
     case 'sku_economics_weekly':  return { reportKey: 'sku_economics_weekly' }
     case 'cogs':                  return { reportKey: 'cogs' }
     case 'fba_customer_returns':  return { reportKey: 'fba_customer_returns' }
+    // INB-160 — reviews go through the bespoke JSON handler (which sets reportKey directly);
+    // these cases are defensive parity, like the never-hit cogs case above.
+    case 'amazon_reviews':          return { reportKey: 'amazon_reviews' }
+    case 'amazon_rating_snapshots': return { reportKey: 'amazon_rating_snapshots' }
     case 'subscribe_and_save':    return { reportKey: 'subscribe_and_save' }
 
     case 'virtual_bundle_sales_snapshots': return { reportKey: 'vb_sales_summary' }

@@ -196,7 +196,7 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
         {/* File — drag-drop + click */}
         <div>
           <label className="block text-[9px] text-[#64748b] mb-1 tracking-[0.08em] uppercase">
-            CSV File
+            CSV / JSON File
           </label>
           <div
             onClick={() => fileRef.current?.click()}
@@ -213,7 +213,7 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
               </div>
             ) : (
               <div>
-                <p className="text-[11px] text-[#94a3b8]">Drop CSV here or click to select</p>
+                <p className="text-[11px] text-[#94a3b8]">Drop a CSV or Axesso reviews JSON here, or click to select</p>
                 <p className="text-[9px] text-[#475569] mt-1">All report types supported</p>
               </div>
             )}
@@ -221,7 +221,7 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
           <input
             ref={fileRef}
             type="file"
-            accept=".csv"
+            accept=".csv,.json"
             className="hidden"
             onChange={e => void selectFile(e.target.files?.[0] ?? null)}
           />
