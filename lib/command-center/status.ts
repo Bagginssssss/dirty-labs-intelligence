@@ -116,6 +116,11 @@ export function deriveStatus(p: {
   // week, so a completed week is fully pulled regardless of data_through (which is the week
   // START, 6 days short of the Saturday). Scoped to sku_economics_weekly via COVERAGE_CONFIG.
   weekAnchoredAtStart?: boolean
+  // Pull-date-shaped monthly reports (INB-160 reviews/snapshots): coverage is the PULL date,
+  // which lands in the CURRENT month, unlike period-end-shaped monthly reports (business_report)
+  // whose period_end is the prior reporting month. A current-month pull → current; the tile only
+  // goes due once a new month begins without a pull. Scoped via COVERAGE_CONFIG.monthlyPullDate.
+  monthlyPullDate?: boolean
 }): TileStatus {
   if (!p.isActive) return 'planned'
   if (p.cadence === 'ad_hoc') return 'ad_hoc'
@@ -129,9 +134,15 @@ export function deriveStatus(p: {
   }
 
   if (p.mode === 'monthly') {
-    const ym = prevMonthYM(p.today)
-    if (p.coverageEnds.some(e => e.periodEnd.slice(0, 7) === ym)) return 'current'
-    const daysPast = daysBetween(lastDayOfMonth(ym), p.today)
+    // Which month must be covered to read "current":
+    //  • period-end-shaped (business_report): the PREVIOUS month — you pull the prior complete
+    //    month, so mid-month you're current once last month is in.
+    //  • pull-date-shaped (reviews/snapshots): the CURRENT month — coverage is the pull date, so a
+    //    pull this month is current; it only goes due once a NEW month begins without a pull.
+    const anchorYM = p.monthlyPullDate ? p.today.slice(0, 7) : prevMonthYM(p.today)
+    if (p.coverageEnds.some(e => e.periodEnd.slice(0, 7) === anchorYM)) return 'current'
+    // Owed since the prior month closed (both shapes): due through the monthly grace, then overdue.
+    const daysPast = daysBetween(lastDayOfMonth(prevMonthYM(p.today)), p.today)
     return daysPast <= STATUS_CONFIG.monthly.dueMaxDaysPast ? 'due' : 'overdue'
   }
 

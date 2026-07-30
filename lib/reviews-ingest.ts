@@ -102,6 +102,29 @@ export async function handleReviewsUpload(opts: {
       ingestion_method: 'json_upload',
     })
 
+    // 3b. Second ingestion-log row for the rating-snapshots report_key when this run wrote any —
+    // the Command Center keys "last upload" off report_key, so without its own row the Amazon
+    // Rating Snapshots tile would read "Last upload: —" forever. Filtered runs (0 snapshots) write
+    // nothing here, correctly leaving the tile's history untouched. (INB-160 tile addendum.)
+    if (snapshotsStored > 0) {
+      await supabaseAdmin.from('report_ingestion_log').insert({
+        brand_id: brandId,
+        report_type: 'amazon_rating_snapshots',
+        report_key: 'amazon_rating_snapshots',
+        source_platform: 'apify_json',
+        date_range_start: runDate || null,
+        date_range_end: runDate || null,
+        rows_received: items.length,      // items seen this run
+        rows_mapped: snapshotsStored,
+        rows_deduplicated: 0,
+        rows_stored: snapshotsStored,     // snapshots written
+        rows_rejected: 0,
+        status: 'success',
+        error_message: null,
+        ingestion_method: 'json_upload',
+      })
+    }
+
     // 4. Coverage (non-fatal) for BOTH tables/report_keys this upload touched.
     try {
       await upsertCoverageForUpload({ reportKey: 'amazon_reviews', tableName: 'amazon_reviews', rows: uniqueReviews })

@@ -30,6 +30,11 @@ export type CoverageTableConfig = {
   // completed week for a perpetually-partial one (data_through is 6 days short of the Saturday)
   // → permanent false OVERDUE + a "Data through <week_start>" label. INB-162 addendum 2.
   weekAnchoredAtStart?: boolean
+  // Monthly reports whose coverage is the PULL date (landing in the current month), not a prior
+  // reporting month-end. The tile is "current" when the CURRENT month has any coverage, and only
+  // goes due once a new month starts without a pull. Without this, a mid-month first pull reads a
+  // permanent false OVERDUE (the prior-month check never matches). INB-160 (Amazon reviews/snapshots).
+  monthlyPullDate?: boolean
 }
 
 export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
@@ -68,6 +73,6 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   fba_customer_returns:             { periodColumn: 'return_date',     mode: 'weekly',   eventDriven: false },
   // Amazon Reviews (INB-160) — pull cadence tracked by scraped_at (the run marker), NOT review_date
   // (which spans the full public review history). Rating snapshots by run snapshot_date. Both monthly.
-  amazon_reviews:                   { periodColumn: 'scraped_at',      mode: 'monthly',  eventDriven: false },
-  amazon_rating_snapshots:          { periodColumn: 'snapshot_date',   mode: 'monthly',  eventDriven: false },
+  amazon_reviews:                   { periodColumn: 'scraped_at',      mode: 'monthly',  eventDriven: false, monthlyPullDate: true },
+  amazon_rating_snapshots:          { periodColumn: 'snapshot_date',   mode: 'monthly',  eventDriven: false, monthlyPullDate: true },
 }

@@ -77,9 +77,10 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
     const latest = rows.reduce<CoverageRowDb | null>((m, c) => (m === null || c.period_end > m.period_end ? c : m), null)
 
     const weekAnchoredAtStart = cfg?.weekAnchoredAtStart ?? false
+    const monthlyPullDate = cfg?.monthlyPullDate ?? false
 
     const status = deriveStatus({
-      mode, cadence: r.cadence, isActive: r.is_active, eventDriven, coverageEnds, lastUploadAt, today, weekAnchoredAtStart,
+      mode, cadence: r.cadence, isActive: r.is_active, eventDriven, coverageEnds, lastUploadAt, today, weekAnchoredAtStart, monthlyPullDate,
     })
 
     return {

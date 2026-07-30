@@ -145,6 +145,33 @@ test('monthly overdue: last completed month missing beyond grace', () => {
   assert.equal(deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', coverageEnds: [month('2026-05-31')] }), 'overdue')
 })
 
+// INB-160 tile addendum — pull-date-shaped monthly (reviews/snapshots): coverage is the PULL date,
+// landing in the CURRENT month. TODAY = 2026-07-10.
+test('monthly pull-date: current-month pull → current (the reported false-OVERDUE bug)', () => {
+  const julyPull = { periodEnd: '2026-07-31', periodType: 'monthly' as const, dataThrough: '2026-07-10' }
+  // Pull-date-shaped: current-month coverage satisfies the check.
+  assert.equal(deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', monthlyPullDate: true, coverageEnds: [julyPull] }), 'current')
+  // Contrast (regression guard): the SAME July coverage WITHOUT the flag = period-end-shaped →
+  // the prior-month (June) check never matches → the old false OVERDUE. Proves the flag is load-bearing.
+  assert.equal(deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', coverageEnds: [julyPull] }), 'overdue')
+})
+
+test('monthly pull-date: first-of-next-month without a pull → due (within grace)', () => {
+  // today 2026-08-01, only July covered, no August pull yet → a new month began → due.
+  const julyPull = { periodEnd: '2026-07-31', periodType: 'monthly' as const, dataThrough: '2026-07-30' }
+  assert.equal(deriveStatus({ ...base, today: '2026-08-01', mode: 'monthly', cadence: 'monthly', monthlyPullDate: true, coverageEnds: [julyPull] }), 'due')
+})
+
+test('monthly pull-date: new month past the grace without a pull → overdue', () => {
+  const julyPull = { periodEnd: '2026-07-31', periodType: 'monthly' as const, dataThrough: '2026-07-30' }
+  assert.equal(deriveStatus({ ...base, today: '2026-08-08', mode: 'monthly', cadence: 'monthly', monthlyPullDate: true, coverageEnds: [julyPull] }), 'overdue')
+})
+
+test('monthly pull-date does NOT change period-end-shaped monthly (business_report regression)', () => {
+  // Period-end-shaped, no flag: prior-month (June) covered → current, exactly as before.
+  assert.equal(deriveStatus({ ...base, mode: 'monthly', cadence: 'monthly', coverageEnds: [month('2026-06-30')] }), 'current')
+})
+
 test('snapshot current: latest snapshot within freshness (weekly-cadence snapshot)', () => {
   assert.equal(deriveStatus({ ...base, mode: 'snapshot', cadence: 'snapshot_weekly', coverageEnds: [snap('2026-07-06')] }), 'current')
 })
