@@ -45,6 +45,9 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   // INB-162 — SKU Economics weekly parent (migration 050). The child sku_economics_fees
   // is written by delete-and-reinsert (not upsert), so it is intentionally NOT listed here.
   sku_economics_weekly:            'brand_id,week_start,marketplace,msku',
+  // INB-160 — FBA Customer Returns (migration 052). occurrence disambiguates identical
+  // multi-unit rows; return history is immutable so overlapping pulls stay idempotent.
+  fba_customer_returns:            'brand_id,return_ts,order_id,sku,lpn,occurrence',
 }
 
 // Everything the constraint checker must cover: the ingest map above PLUS conflict

@@ -49,7 +49,7 @@ export const COVERAGE_WINDOW_DAYS = 320
 
 export const SECTION_ORDER = [
   'Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save',
-  'Virtual Bundles', 'SmartScout', 'ScaleInsights',
+  'Virtual Bundles', 'SmartScout', 'ScaleInsights', 'Customer Voice',
 ]
 
 // ── date helpers ─────────────────────────────────────────────────────────────

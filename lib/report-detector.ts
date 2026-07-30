@@ -106,6 +106,16 @@ const SIGNATURES: Array<{
       has(h, 'avg_cost'),
   },
   {
+    // FBA Customer Returns (INB-160) — Seller Central Customer Returns flat file (Windows-1252).
+    // detailed_disposition + license_plate_number + customer_comments co-occur nowhere else.
+    reportType: 'fba_customer_returns',
+    tableName:  'fba_customer_returns',
+    match: h =>
+      has(h, 'detailed_disposition') &&
+      has(h, 'license_plate_number') &&
+      has(h, 'customer_comments'),
+  },
+  {
     // Operator's 90-day rolling window VB snapshot export.
     // The file is multi-section: each section starts with a "Week N Report (…)" line,
     // which PapaParse consumes as the header row. After normalize() the first header

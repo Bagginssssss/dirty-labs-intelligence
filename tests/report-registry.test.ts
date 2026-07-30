@@ -37,20 +37,21 @@ const LIVE_SCHEMA: Record<string, string[]> = {
   brand_analytics_repeat_purchase: ['reporting_date', 'level'],
   sku_economics_weekly: ['week_start', 'marketplace', 'msku'],
   cogs: ['internal_sku'],
+  fba_customer_returns: ['return_date'],
 }
 
 // ---------------------------------------------------------------------------
 // Seed integrity
 // ---------------------------------------------------------------------------
 
-test('seed: 48 rows, unique keys, valid enums, 46 active / 2 planned', async () => {
+test('seed: 49 rows, unique keys, valid enums, 47 active / 2 planned', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  assert.equal(REPORT_REGISTRY_SEED.length, 48) // INB-162: +sku_economics_weekly +cogs (both active)
+  assert.equal(REPORT_REGISTRY_SEED.length, 49) // INB-160: +fba_customer_returns (active)
   const keys = new Set(REPORT_REGISTRY_SEED.map(r => r.report_key))
-  assert.equal(keys.size, 48, 'report_keys are unique')
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 46)
+  assert.equal(keys.size, 49, 'report_keys are unique')
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 47)
   assert.equal(REPORT_REGISTRY_SEED.filter(r => !r.is_active).length, 2)
-  const GROUPS = new Set(['Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save', 'Virtual Bundles', 'SmartScout', 'ScaleInsights'])
+  const GROUPS = new Set(['Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save', 'Virtual Bundles', 'SmartScout', 'ScaleInsights', 'Customer Voice'])
   const CADENCES = new Set(['weekly', 'monthly', 'snapshot_weekly', 'ad_hoc'])
   for (const r of REPORT_REGISTRY_SEED) {
     assert.ok(GROUPS.has(r.source_group), `${r.report_key} source_group`)
@@ -119,6 +120,7 @@ test('derive: business + S&S + VB static keys', async () => {
   assert.equal((await derive('business_report_daily', [], [{}])).reportKey, 'business_report_daily')
   assert.equal((await derive('sku_economics_weekly', [], [{}])).reportKey, 'sku_economics_weekly')
   assert.equal((await derive('cogs', [], [{}])).reportKey, 'cogs')
+  assert.equal((await derive('fba_customer_returns', [], [{}])).reportKey, 'fba_customer_returns')
   assert.equal((await derive('subscribe_and_save', [], [{}])).reportKey, 'subscribe_and_save')
   assert.equal((await derive('search_query_performance', [], [{}])).reportKey, 'sqp_weekly')
   assert.equal((await derive('virtual_bundle_sales_snapshots', [], [{}])).reportKey, 'vb_sales_summary')

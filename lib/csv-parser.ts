@@ -13,7 +13,10 @@ interface DecodableFile {
 //   • UTF-8 with BOM (EF BB BF)  → BOM stripped, decoded as UTF-8 (today's case)
 //   • UTF-16 LE / BE with BOM    → decoded from UTF-16 (FF FE / FE FF)
 //   • BOM-less UTF-16            → detected via pervasive interleaved null bytes
-//   • anything else              → falls back to file.text() (UTF-8)
+//   • valid UTF-8                → decoded as UTF-8 (today's default case)
+//   • invalid-UTF-8 (Windows-1252) → decoded as windows-1252 (INB-160: the FBA Customer
+//                                    Returns report uses cp1252 smart quotes 0x92, which are
+//                                    invalid UTF-8 and would otherwise become lossy U+FFFD)
 // Note: this does NOT touch U+FFFC (￼) object-replacement characters — those are
 // Amazon's own legitimate placeholder glyphs and part of the row's unique key.
 export async function decodeFileContent(file: DecodableFile): Promise<string> {
@@ -51,7 +54,14 @@ export async function decodeFileContent(file: DecodableFile): Promise<string> {
     return new TextDecoder(encoding).decode(buf)
   }
 
-  return file.text()
+  // No BOM and not UTF-16. Prefer STRICT UTF-8; a Windows-1252 export (e.g. the FBA Customer
+  // Returns report — smart quotes 0x92 etc.) contains bytes that aren't valid UTF-8, so fall
+  // back to windows-1252 rather than UTF-8's lossy U+FFFD replacement (INB-160).
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
+  } catch {
+    return new TextDecoder('windows-1252').decode(buf)
+  }
 }
 
 export interface ParseResult {

@@ -54,6 +54,8 @@ const CURRENT_DB_INDEXES = [
   // INB-162 — SKU Economics weekly parent (migration 050). The child sku_economics_fees is written
   // by delete-and-reinsert, not upsert, so it is intentionally absent from the upsert config and this check.
   { table_name: 'sku_economics_weekly', index_name: 'uq_sku_economics_weekly', columns: ['brand_id', 'week_start', 'marketplace', 'msku'] },
+  // INB-160 — FBA Customer Returns (migration 052). occurrence disambiguates identical multi-unit rows.
+  { table_name: 'fba_customer_returns', index_name: 'uq_fba_customer_returns', columns: ['brand_id', 'return_ts', 'order_id', 'sku', 'lpn', 'occurrence'] },
 ]
 
 // ---------------------------------------------------------------------------

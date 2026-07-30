@@ -5,6 +5,7 @@ import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { unmappedSnsDailyColumns } from '@/lib/mappers/sns-dashboard-daily'
 import { buildSkuEconomicsFees, skuEconomicsWarnings } from '@/lib/mappers/sku-economics'
+import { fbaReturnsWarnings } from '@/lib/mappers/fba-customer-returns'
 import { handleCogsUpload } from '@/lib/cogs-ingest'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
@@ -373,6 +374,12 @@ export async function POST(request: Request) {
     // rejected, stored) partition THIS number, not rowsReceived.
     rowsMapped = mappedRows.length
 
+    // INB-160 — FBA Customer Returns: surface any reason code not in return_reason_map (stored as
+    // fault_class='unmapped'). Non-fatal — a new Amazon code is flagged at QC, never dropped.
+    if (reportType === 'fba_customer_returns') {
+      for (const w of fbaReturnsWarnings(parseResult.rows)) ingestErrors.push(w)
+    }
+
     // Derive effective report type for sp_campaign_performance.
     // SP uploads include "Program Type" = "Sponsored Products"; SB uploads omit the column (null).
     // The mapper stores it as program_type. First row wins.
@@ -490,6 +497,7 @@ export async function POST(request: Request) {
       sns_dashboard_snapshots:          ['snapshot_date'],
       brand_analytics_repeat_purchase:  ['reporting_date'],
       sku_economics_weekly:             ['week_start'],
+      fba_customer_returns:             ['return_date'],
     }
     const dateCols = DATE_COL_OVERRIDES[tableName] ?? ['report_date']
     const allDates = uniqueRows

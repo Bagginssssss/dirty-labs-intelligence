@@ -28,6 +28,8 @@ export const REQUIRED_NOT_NULL: Record<string, string[]> = {
   sns_dashboard_snapshots: ['snapshot_date', 'report'],
   // INB-141 — BA Repeat Purchase: reporting_date + level are the key discriminators.
   brand_analytics_repeat_purchase: ['reporting_date', 'level'],
+  // INB-160 — FBA Customer Returns: return_ts is the timestamp key + the source of return_date.
+  fba_customer_returns: ['return_ts'],
 }
 
 export interface RejectedRow {

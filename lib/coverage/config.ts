@@ -64,4 +64,6 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   sku_economics_weekly:             { periodColumn: 'week_start',      mode: 'weekly',   eventDriven: false, weekAnchoredAtStart: true },
   // COGS (INB-162) — effective-dated cost snapshots; ad-hoc, tracked by effective date
   cogs:                             { periodColumn: 'valid_from',      mode: 'snapshot', eventDriven: false },
+  // FBA Customer Returns (INB-160) — daily return dates bucketed to weeks (not start-anchored)
+  fba_customer_returns:             { periodColumn: 'return_date',     mode: 'weekly',   eventDriven: false },
 }

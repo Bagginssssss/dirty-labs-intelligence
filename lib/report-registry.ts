@@ -101,6 +101,9 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
   { report_key: 'si_rules_assigned', display_name: 'SI Assigned Rules Snapshot', source_group: 'ScaleInsights', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'scale_insights_rule_assignments', discriminator: null, requires_period_dates: true, is_active: true, sort_order: 10, notes: 'Point-in-time export — pull Assigned+Unassigned back-to-back, same-day upload.' },
   { report_key: 'si_rules_unassigned', display_name: 'SI Unassigned Rules Snapshot', source_group: 'ScaleInsights', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'scale_insights_rule_assignments', discriminator: null, requires_period_dates: true, is_active: true, sort_order: 11, notes: 'Point-in-time pair — pull back-to-back with Assigned, same-day upload. File-of-origin is content-derived post-upsert (is_assigned); upload attribution uses header shape.' },
 
+  // ── Customer Voice (INB-160) ──────────────────────────────────────────────────
+  { report_key: 'fba_customer_returns', display_name: 'FBA Customer Returns', source_group: 'Customer Voice', cadence: 'weekly', pull_period: 'Full history / weekly top-up', target_table: 'fba_customer_returns', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Seller Central Customer Returns flat file (Windows-1252). Full history in one pull; weekly top-up overlaps and is idempotent via the occurrence key. Date is in the file. Basis for the sku_return_rates NCX proxy.' },
+
   // ── Planned (not yet ingesting) ───────────────────────────────────────────────
   { report_key: 'ba_top_search_terms', display_name: 'BA Top Search Terms', source_group: 'Brand Analytics', cadence: 'weekly', pull_period: 'Latest week', target_table: 'brand_analytics_top_search_terms', discriminator: null, requires_period_dates: false, is_active: false, sort_order: 3, notes: 'Planned — INB-140. Target table does not exist yet.' },
   { report_key: 'amc_query_results', display_name: 'AMC Query Results', source_group: 'Brand Analytics', cadence: 'ad_hoc', pull_period: null, target_table: 'amc_query_results', discriminator: null, requires_period_dates: false, is_active: false, sort_order: 5, notes: 'Planned — INB-142. Target table does not exist yet.' },
@@ -181,6 +184,7 @@ export function deriveReportKey(
     case 'business_report':       return { reportKey: 'business_report_child_asin' }
     case 'sku_economics_weekly':  return { reportKey: 'sku_economics_weekly' }
     case 'cogs':                  return { reportKey: 'cogs' }
+    case 'fba_customer_returns':  return { reportKey: 'fba_customer_returns' }
     case 'subscribe_and_save':    return { reportKey: 'subscribe_and_save' }
 
     case 'virtual_bundle_sales_snapshots': return { reportKey: 'vb_sales_summary' }
