@@ -85,10 +85,20 @@ test('detectFeeTriplets: finds all 5 triplets, ignores lone per-unit + total-onl
   assert.ok(!names.includes('Net proceeds'))
 })
 
-test('COMPONENT_FEES flags exactly the two components', () => {
+test('COMPONENT_FEES flags exactly the two components present in the fixture', () => {
   const triplets = detectFeeTriplets(HEADERS)
   const comp = triplets.filter(t => COMPONENT_FEES.has(t.feeType)).map(t => t.feeType).sort()
   assert.deepEqual(comp, ['Base fulfillment fee', 'Fuel and Logistics-related surcharge'])
+})
+
+test('COMPONENT_FEES covers both rollup component pairs (INB-162 addendum: storage rollup)', () => {
+  // Fulfillment rollup: Base fulfillment fee + Fuel surcharge = FBA fulfillment fees.
+  // Storage rollup:     Base monthly storage fee + Storage utilization surcharge = Monthly inventory storage fee.
+  assert.ok(COMPONENT_FEES.has('Base fulfillment fee'))
+  assert.ok(COMPONENT_FEES.has('Fuel and Logistics-related surcharge'))
+  assert.ok(COMPONENT_FEES.has('Base monthly storage fee'))
+  assert.ok(COMPONENT_FEES.has('Storage utilization surcharge'))
+  assert.equal(COMPONENT_FEES.size, 4)
 })
 
 // ── active / skip boundary ─────────────────────────────────────────────────────────

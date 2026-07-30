@@ -13,13 +13,18 @@ import { makeGetter, norm, parseDate, parseNumeric } from './types'
 // The lone "Cost of goods sold per unit" / "Miscellaneous cost per unit" columns have no
 // quantity/total sibling, so they are naturally excluded from triplet detection.
 
-// The two fee types that are COMPONENTS of "FBA fulfillment fees" (Base fulfillment fee +
-// Fuel and Logistics-related surcharge = FBA fulfillment fees, verified per-row). Any fee
-// summation must exclude components to avoid double-counting. Unknown fees default
+// Fee types that are COMPONENTS of a rollup fee — they sum to the rollup, so any fee
+// summation must exclude components to avoid double-counting. Two rollups exist, both
+// verified per-row across the full 2025–2026 backlog with 0 exceptions:
+//   Base fulfillment fee     + Fuel and Logistics-related surcharge = FBA fulfillment fees
+//   Base monthly storage fee + Storage utilization surcharge        = Monthly inventory storage fee
+// (the storage rollup appears only in weeks Amazon bills storage.) Unknown fees default
 // non-component. Names are the exact Amazon header base (minus the triplet suffix).
 export const COMPONENT_FEES = new Set<string>([
   'Base fulfillment fee',
   'Fuel and Logistics-related surcharge',
+  'Base monthly storage fee',
+  'Storage utilization surcharge',
 ])
 
 // One detected fee, with the exact display name and the NORMALIZED keys of its three cells.
