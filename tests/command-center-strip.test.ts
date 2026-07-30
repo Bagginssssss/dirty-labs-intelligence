@@ -60,6 +60,38 @@ test('monthly: 8 months of coverage → 8 filled cells (no false gaps)', () => {
   assert.ok(strip.every(c => c.state === 'filled'), 'all 8 months present → all filled')
 })
 
+test('monthly pull-date strip: three cell states — filled (pull month), neutral (before first coverage), gap (interior miss)', () => {
+  // INB-160 tile addendum 2. TODAY 2026-07-10, pull-date-shaped → strip anchors at the CURRENT
+  // month (July). Coverage in May + July (June missing, interior). Result: months before the
+  // earliest coverage (May) are NEUTRAL (no expectation), May+July FILLED, June a red GAP.
+  const coverageEnds = [
+    { periodEnd: '2026-05-31', periodType: 'monthly' as const, dataThrough: '2026-05-20' },
+    { periodEnd: '2026-07-31', periodType: 'monthly' as const, dataThrough: '2026-07-10' },
+  ]
+  const strip = buildStrip({ mode: 'monthly', eventDriven: false, coverageEnds, today: TODAY, monthlyPullDate: true })
+  assert.deepEqual(strip.map(c => c.label), ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07'])
+  assert.equal(strip.find(c => c.label === '2026-07')?.state, 'filled', 'current-month pull → filled (was red)')
+  assert.equal(strip.find(c => c.label === '2026-05')?.state, 'filled')
+  assert.equal(strip.find(c => c.label === '2026-06')?.state, 'gap', 'interior miss after first coverage → red')
+  // Every month before the earliest coverage (May) is neutral, not red.
+  for (const ym of ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04']) {
+    assert.equal(strip.find(c => c.label === ym)?.state, 'neutral', `${ym} before first coverage → neutral`)
+  }
+  assert.equal(strip.filter(c => c.state === 'gap').length, 1, 'only the interior miss is a gap')
+})
+
+test('first-coverage-boundary generalizes to weekly strips: pre-first-coverage weeks are neutral, not red', () => {
+  // Weekly report whose earliest coverage is 2026-06-13 → the 4 older strip weeks carry no
+  // expectation and read neutral; the covered weeks stay filled.
+  const present = ['2026-06-13', '2026-06-20', '2026-06-27', '2026-07-04']
+  const strip = buildStrip({ mode: 'weekly', eventDriven: false, coverageEnds: weeklyEnds(present), today: TODAY })
+  for (const sat of ['2026-05-16', '2026-05-23', '2026-05-30', '2026-06-06']) {
+    assert.equal(strip.find(c => c.periodEnd === sat)?.state, 'neutral', `${sat} before first coverage → neutral`)
+  }
+  assert.equal(strip.filter(c => c.state === 'filled').length, 4)
+  assert.equal(strip.filter(c => c.state === 'gap').length, 0, 'no red before the report ever had data')
+})
+
 test('snapshot_weekly: snapshots bucket into their week; missing weeks neutral', () => {
   // snapshots on 2026-07-01 (→ week ending 07-04) and 2026-06-24 (→ 06-27); others missing → neutral.
   // TODAY 2026-07-10 (Fri) → snapshot strips now anchor the rightmost cell at weekEndSaturday(today)

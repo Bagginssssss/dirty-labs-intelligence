@@ -179,10 +179,13 @@ export function deriveStatus(p: {
 }
 
 // ── strip ────────────────────────────────────────────────────────────────────
-function monthlyStrip(coverageEnds: CoverageEnd[], eventDriven: boolean, today: string, n: number): StripCell[] {
+function monthlyStrip(coverageEnds: CoverageEnd[], eventDriven: boolean, today: string, n: number, monthlyPullDate: boolean): StripCell[] {
   const months = new Set(coverageEnds.map(e => e.periodEnd.slice(0, 7)))
   const missing: StripCellState = eventDriven ? 'neutral' : 'gap'
-  const [y, m] = prevMonthYM(today).split('-').map(Number)
+  // Pull-date-shaped tiles (reviews/snapshots) anchor the rightmost cell at the CURRENT month
+  // (coverage is the pull date, in the current month); period-end-shaped tiles (business_report)
+  // anchor at the last COMPLETED month. Mirrors the deriveStatus monthlyPullDate distinction.
+  const [y, m] = (monthlyPullDate ? today.slice(0, 7) : prevMonthYM(today)).split('-').map(Number)
   const cells: StripCell[] = []
   for (let i = n - 1; i >= 0; i--) {
     const dt = new Date(Date.UTC(y, m - 1 - i, 1))
@@ -240,12 +243,26 @@ export function buildStrip(p: {
   // Covering-window reports (S&S): each snapshot covers a rolling window of this many days from
   // its date (INB-152). Absent/null → each period is a point (set-membership fill).
   coveringWindowDays?: number | null
+  // Pull-date-shaped monthly tiles (INB-160) — anchor the strip at the current month (see monthlyStrip).
+  monthlyPullDate?: boolean
 }): StripCell[] {
   const n = p.n ?? 8
   const cells =
     p.mode === 'monthly'
-      ? monthlyStrip(p.coverageEnds, p.eventDriven, p.today, n)
+      ? monthlyStrip(p.coverageEnds, p.eventDriven, p.today, n, p.monthlyPullDate ?? false)
       : weekCells(p.coverageEnds, p.eventDriven, p.mode, p.today, n, p.coveringWindowDays ?? null)
+
+  // Before the report's first-ever coverage there was no expectation of data, so a cell earlier
+  // than the earliest covered period reads NEUTRAL, not a red gap. (Generalizes across modes; a
+  // gap INTERIOR to the covered range — after first coverage — still reads red.) The earliest
+  // coverage is taken from the loaded window, which is wider than the strip.
+  const firstCovered = p.coverageEnds.reduce<string | null>(
+    (min, e) => (min === null || e.periodEnd < min ? e.periodEnd : min), null)
+  if (firstCovered !== null) {
+    for (const c of cells) {
+      if (c.state === 'gap' && c.periodEnd < firstCovered) c.state = 'neutral'
+    }
+  }
 
   // Publication lag: the most-recent expected cell, when uncovered but still within the
   // due grace, reads as pending (awaiting), not a red gap — matches the due status.

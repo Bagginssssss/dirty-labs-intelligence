@@ -111,7 +111,7 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
       // ad_hoc reports (COGS) aren't a periodic series — a strip of one effective date reads as a
       // broken empty grey bar, so suppress it (INB-162 addendum 2).
       strip: r.is_active && mode && r.cadence !== 'ad_hoc'
-        ? buildStrip({ mode, eventDriven, coverageEnds, today, coveringWindowDays: cfg?.coveringWindowDays ?? null })
+        ? buildStrip({ mode, eventDriven, coverageEnds, today, coveringWindowDays: cfg?.coveringWindowDays ?? null, monthlyPullDate })
         : [],
     }
   })
