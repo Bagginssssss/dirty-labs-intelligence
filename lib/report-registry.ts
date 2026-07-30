@@ -57,6 +57,8 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
   // ── Business Reports ──────────────────────────────────────────────────────────
   { report_key: 'business_report_daily', display_name: 'Sales & Traffic (Daily)', source_group: 'Business Reports', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'business_report_daily', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: null },
   { report_key: 'business_report_child_asin', display_name: 'Sales & Traffic by Child ASIN', source_group: 'Business Reports', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'business_report', discriminator: null, requires_period_dates: true, is_active: true, sort_order: 2, notes: 'Period-aggregate rows carry no date — requires_period_dates preserves the INB-109 gate.' },
+  // INB-162 — SKU Economics: weekly MSKU-level fee economics; child fee lines in sku_economics_fees (migration 050).
+  { report_key: 'sku_economics_weekly', display_name: 'SKU Economics (weekly)', source_group: 'Business Reports', cadence: 'weekly', pull_period: 'Prior week (Sun–Sat)', target_table: 'sku_economics_weekly', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 3, notes: 'MSKU-level fee economics; child fee lines in sku_economics_fees. Date is in the file (Start/End date) so no form dates are required. NOT attribution-affected — no rolling re-pull window.' },
 
   // ── Subscribe & Save ───────────────────────────────────────────────────────────
   { report_key: 'subscribe_and_save', display_name: 'S&S Performance', source_group: 'Subscribe & Save', cadence: 'monthly', pull_period: 'Latest month', target_table: 'subscribe_and_save', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Overlapping rolling ~30d windows labeled at period start (INB-136 covering-period semantics).' },
@@ -175,6 +177,7 @@ export function deriveReportKey(
 
     case 'business_report_daily': return { reportKey: 'business_report_daily' }
     case 'business_report':       return { reportKey: 'business_report_child_asin' }
+    case 'sku_economics_weekly':  return { reportKey: 'sku_economics_weekly' }
     case 'subscribe_and_save':    return { reportKey: 'subscribe_and_save' }
 
     case 'virtual_bundle_sales_snapshots': return { reportKey: 'vb_sales_summary' }

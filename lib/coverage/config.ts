@@ -51,4 +51,6 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   // Subscribe & Save Dashboard (INB-144) — dailies bucketed to weeks; snapshots point-in-time
   sns_dashboard_daily:              { periodColumn: 'metric_date',     mode: 'weekly',   eventDriven: false },
   sns_dashboard_snapshots:          { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
+  // SKU Economics (INB-162) — weekly parent; week_start is the period-start anchor
+  sku_economics_weekly:             { periodColumn: 'week_start',      mode: 'weekly',   eventDriven: false },
 }

@@ -51,6 +51,9 @@ const CURRENT_DB_INDEXES = [
   { table_name: 'sns_dashboard_daily', index_name: 'uq_sns_dashboard_daily', columns: ['brand_id', 'metric_date', 'metric'] },
   { table_name: 'sns_dashboard_snapshots', index_name: 'uq_sns_dashboard_snapshots', columns: ['brand_id', 'snapshot_date', 'report', 'dim1', 'dim2'] },
   { table_name: 'brand_analytics_repeat_purchase', index_name: 'uq_brand_analytics_repeat_purchase', columns: ['brand_id', 'reporting_date', 'level', 'asin'] },
+  // INB-162 — SKU Economics weekly parent (migration 050). The child sku_economics_fees is written
+  // by delete-and-reinsert, not upsert, so it is intentionally absent from the upsert config and this check.
+  { table_name: 'sku_economics_weekly', index_name: 'uq_sku_economics_weekly', columns: ['brand_id', 'week_start', 'marketplace', 'msku'] },
 ]
 
 // ---------------------------------------------------------------------------

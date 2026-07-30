@@ -23,6 +23,7 @@ import { mapBrandAnalyticsCustomerLoyalty } from './brand-analytics-customer-loy
 import { mapSnsDashboardDaily } from './sns-dashboard-daily'
 import { mapSnsDashboardSnapshots } from './sns-dashboard-snapshots'
 import { mapRepeatPurchase } from './repeat-purchase'
+import { mapSkuEconomicsWeekly } from './sku-economics'
 
 // MapperFn may return a single row or an array of rows (for unpivoting mappers).
 export type MapperFn = (row: RawRow, brandId: string, context?: MapperContext) => MappedRow | MappedRow[]
@@ -62,6 +63,8 @@ const BATCH_MAPPERS: Record<string, BatchMapperFn> = {
   smartscout_subcategory_products:       mapSmartscoutSubcategoryProducts,
   virtual_bundle_sales_snapshots:        mapVirtualBundleSnapshots,
   brand_analytics_customer_loyalty:      mapBrandAnalyticsCustomerLoyalty,
+  // INB-162 — SKU Economics: batch mapper (weekly parent); child fees built separately in the route.
+  sku_economics_weekly:                  mapSkuEconomicsWeekly,
 }
 
 export function getMapper(reportType: string): MapperFn | null {
@@ -94,3 +97,4 @@ export * from './brand-analytics-customer-loyalty'
 export * from './sns-dashboard-daily'
 export * from './sns-dashboard-snapshots'
 export * from './repeat-purchase'
+export * from './sku-economics'

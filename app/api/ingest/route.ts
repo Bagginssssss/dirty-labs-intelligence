@@ -4,6 +4,7 @@ import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { unmappedSnsDailyColumns } from '@/lib/mappers/sns-dashboard-daily'
+import { buildSkuEconomicsFees, skuEconomicsWarnings } from '@/lib/mappers/sku-economics'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { REPORT_REGISTRY } from '@/lib/upload-tracker/registry'
 import { periodStart } from '@/lib/upload-tracker/gaps'
@@ -474,6 +475,7 @@ export async function POST(request: Request) {
       sns_dashboard_daily:              ['metric_date'],
       sns_dashboard_snapshots:          ['snapshot_date'],
       brand_analytics_repeat_purchase:  ['reporting_date'],
+      sku_economics_weekly:             ['week_start'],
     }
     const dateCols = DATE_COL_OVERRIDES[tableName] ?? ['report_date']
     const allDates = uniqueRows
@@ -522,6 +524,48 @@ export async function POST(request: Request) {
       }
     }
 
+    // 5b. SKU Economics (INB-162): one file → two tables. The weekly parent rode the
+    // generic upsert above; write the long fee child (sku_economics_fees) by
+    // delete-and-reinsert per (week_start, marketplace) so a corrected file that drops a
+    // fee type never leaves orphans. Also surface the non-fatal net-proceeds / COGS-
+    // populated warnings. A fee-write failure downgrades status but never throws.
+    let feeRowsStored = 0
+    let feeWriteFailed = false
+    if (reportType === 'sku_economics_weekly') {
+      for (const w of skuEconomicsWarnings(parseResult.rows)) ingestErrors.push(w)
+
+      if (rowsStored > 0) {
+        const feeRows = buildSkuEconomicsFees(parseResult.rows, brandId)
+        // Distinct (week_start, marketplace) pairs to clear — normally one per file.
+        const pairs = new Map<string, { week_start: string; marketplace: string }>()
+        for (const r of feeRows) {
+          if (r.week_start) pairs.set(`${r.week_start}::${r.marketplace}`, { week_start: r.week_start, marketplace: r.marketplace })
+        }
+        for (const p of pairs.values()) {
+          const { error } = await supabaseAdmin
+            .from('sku_economics_fees')
+            .delete()
+            .eq('brand_id', brandId)
+            .eq('week_start', p.week_start)
+            .eq('marketplace', p.marketplace)
+          if (error) {
+            feeWriteFailed = true
+            ingestErrors.push(`Fee delete failed for ${p.week_start}/${p.marketplace}: ${error.message}`)
+          }
+        }
+        for (let i = 0; i < feeRows.length; i += BATCH_SIZE) {
+          const batch = feeRows.slice(i, i + BATCH_SIZE)
+          const { error } = await supabaseAdmin.from('sku_economics_fees').insert(batch)
+          if (error) {
+            feeWriteFailed = true
+            ingestErrors.push(`Fee insert batch ${Math.floor(i / BATCH_SIZE) + 1} failed: ${error.message}`)
+          } else {
+            feeRowsStored += batch.length
+          }
+        }
+      }
+    }
+
     // 6. Log ingestion
     await supabaseAdmin.from('report_ingestion_log').insert({
       brand_id: brandId,
@@ -535,7 +579,7 @@ export async function POST(request: Request) {
       rows_deduplicated: rowsDeduplicated,
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
-      status: rowsRejected === 0 ? 'success' : rowsStored > 0 ? 'partial' : 'failed',
+      status: (rowsRejected === 0 && !feeWriteFailed) ? 'success' : rowsStored > 0 ? 'partial' : 'failed',
       error_message: ingestErrors.length ? ingestErrors.join(' | ') : null,
       ingestion_method: 'csv_upload',
     })
@@ -581,6 +625,7 @@ export async function POST(request: Request) {
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
       rows_deduplicated: rowsDeduplicated,
+      ...(reportType === 'sku_economics_weekly' ? { fee_rows_stored: feeRowsStored } : {}),
       recalc_status: recalcStatus,
       ...(recalcPlan ? { recalc_window: recalcPlan } : {}),
       parse_errors: ingestErrors,

@@ -42,6 +42,9 @@ export const UPSERT_CONFLICT_KEYS: Record<string, string> = {
   sns_dashboard_snapshots:         'brand_id,snapshot_date,report,dim1,dim2',
   // INB-141 — BA Repeat Purchase: brand + ASIN views in one table (migration 048).
   brand_analytics_repeat_purchase: 'brand_id,reporting_date,level,asin',
+  // INB-162 — SKU Economics weekly parent (migration 050). The child sku_economics_fees
+  // is written by delete-and-reinsert (not upsert), so it is intentionally NOT listed here.
+  sku_economics_weekly:            'brand_id,week_start,marketplace,msku',
 }
 
 // Everything the constraint checker must cover: the ingest map above PLUS conflict

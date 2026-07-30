@@ -86,6 +86,17 @@ const SIGNATURES: Array<{
       has(h, 'purchases_brand_count'),
   },
   {
+    // Amazon SKU Economics (INB-162) — weekly MSKU-level fee economics. The trio
+    // net_proceeds_total + msku + amazon_store co-occurs in no other known report.
+    // Very specific; placed early so it can never fall through to a generic check.
+    reportType: 'sku_economics_weekly',
+    tableName:  'sku_economics_weekly',
+    match: h =>
+      has(h, 'net_proceeds_total') &&
+      has(h, 'msku') &&
+      has(h, 'amazon_store'),
+  },
+  {
     // Operator's 90-day rolling window VB snapshot export.
     // The file is multi-section: each section starts with a "Week N Report (…)" line,
     // which PapaParse consumes as the header row. After normalize() the first header
