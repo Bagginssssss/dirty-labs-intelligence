@@ -117,3 +117,66 @@ test('maintain: valid report_key buckets rows and upserts once', async () => {
   assert.equal(coverageUpserts[0].rows[0].period_end, '2026-06-27') // both days → week ending Sat 06-27
   assert.equal(coverageUpserts[0].rows[0].event_driven, false)
 })
+
+// ── INB-166 window-per-pull: data_through = window END, not the start ─────────────
+test('maintain window-per-pull: business_report window comes from the ingest date range (end, not start)', async () => {
+  const { upsertCoverageForUpload } = await import('../lib/coverage/maintain.ts')
+  coverageUpserts.length = 0
+  failCoverage = false
+  // business_report rows carry only report_date (= window start); the end is the ingest date_range_end.
+  await upsertCoverageForUpload({
+    reportKey: 'business_report_child_asin', tableName: 'business_report',
+    rows: [{ report_date: '2026-07-09' }, { report_date: '2026-07-09' }],
+    dateRangeStart: '2026-07-09', dateRangeEnd: '2026-08-09',
+  })
+  assert.equal(coverageUpserts.length, 1)
+  assert.equal(coverageUpserts[0].rows.length, 1, 'one window row per pull')
+  const row = coverageUpserts[0].rows[0]
+  assert.equal(row.period_start, '2026-07-09')
+  assert.equal(row.period_end, '2026-08-09')       // the window END (was report_date under the old bug)
+  assert.equal(row.data_through, '2026-08-09')      // the fix: END, not the start
+  assert.equal(row.period_type, 'snapshot')
+  assert.equal(row.period_label, 'Window 2026-07-09 → 2026-08-09')
+})
+
+test('maintain window-per-pull: subscribe_and_save takes the window end from the row date_range_end column', async () => {
+  const { upsertCoverageForUpload } = await import('../lib/coverage/maintain.ts')
+  coverageUpserts.length = 0
+  await upsertCoverageForUpload({
+    reportKey: 'subscribe_and_save', tableName: 'subscribe_and_save',
+    rows: [
+      { report_date: '2026-07-08', date_range_end: '2026-08-07' },
+      { report_date: '2026-07-08', date_range_end: '2026-08-07' },
+    ],
+  })
+  assert.equal(coverageUpserts.length, 1)
+  assert.equal(coverageUpserts[0].rows.length, 1, 'distinct (start,end) → one window')
+  const row = coverageUpserts[0].rows[0]
+  assert.equal(row.period_start, '2026-07-08')
+  assert.equal(row.period_end, '2026-08-07')        // END from the row column
+  assert.equal(row.data_through, '2026-08-07')       // the fix: END, not report_date
+  assert.equal(row.period_type, 'snapshot')
+})
+
+// ── INB-166 item-4 guard: a known report_type deriving NO report_key → 400, no coverage ──
+test('guard: the real "Reorder & S&S Share" header signature derives NULL → 400 naming report_type + header, no coverage', async () => {
+  coverageUpserts.length = 0
+  failCoverage = false
+  // The real Share export's S&S column is "Subscribe  &  Save (CUSTOM)" (DOUBLED spaces around &),
+  // which normalizes onto the Sales export's subscribe_save_custom (→ sns_sales), so the file spans
+  // two report_keys (reorder_share + sales) and deriveReportKey returns NULL. INB-167 fixes the
+  // mapping; this asserts the guard BLOCKS the upload (400) instead of silently storing into sns_sales.
+  const csv = [
+    'calc_date_granularity,Reorder Rate (CUSTOM),Subscribe  &  Save (CUSTOM)',
+    '2026-08-06 00:00:00,0.42,0.31',
+  ].join('\n')
+  const body = new FormData()
+  body.append('file', new File([csv], 'ReorderAndSnSShare.csv', { type: 'text/csv' }))
+  body.append('brand_id', BRAND)
+  const res = await POST(new Request('http://localhost/api/ingest', { method: 'POST', body }))
+  assert.equal(res.status, 400)
+  const json = await res.json() as Record<string, unknown>
+  assert.match(String(json.error), /sns_dashboard_daily/)              // names the report_type
+  assert.match(String(json.error), /Subscribe {2}& {2}Save \(CUSTOM\)/) // names the exact header signature
+  assert.equal(coverageUpserts.length, 0, 'no coverage written on a blocked upload')
+})

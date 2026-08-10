@@ -432,6 +432,26 @@ export async function POST(request: Request) {
       console.warn(`[ingest] report_key not derived for ${effectiveReportType}: ${derivedKey.warning}`);
     }
 
+    // INB-166 (item 4) — a KNOWN report_type (we already resolved tableName) that yields NO report_key
+    // must FAIL LOUDLY here, before any rows are stored. Otherwise rows land but report_coverage is
+    // silently skipped — the frozen-tile class (e.g. the sns Share export writing into sns_sales while
+    // its tile quietly stops advancing). The 400 names the report_type + the header signature so an
+    // unregistered-but-valid report can be registered rather than just failing. This also (by design)
+    // rejects genuinely ambiguous files (mixed ad_type in one CSV) that previously stored with a NULL
+    // key, and blocks the INB-167 Share export until that ticket ships.
+    if (reportKey === null) {
+      const headerSig = parseResult.headers.map(h => h.replace(/^﻿/, '').trim()).filter(Boolean).join(' | ');
+      return Response.json(
+        {
+          error:
+            `Upload blocked: report_type '${effectiveReportType}' resolved to NO report_key ` +
+            `(${derivedKey.warning ?? 'ambiguous or unregistered'}). No rows were stored. ` +
+            `Header signature: ${headerSig}. Register this report or upload a single-report file.`,
+        },
+        { status: 400 },
+      );
+    }
+
     // 3b. Cross-snapshot sanity check (INB-152). A sticky subcategory dropdown ingested a
     // Toilet Cleaners brands file under Stain Removers (~10% brand overlap). Before storing,
     // compare this file's brand set to the SELECTED subcategory's most recent prior snapshot;
@@ -642,7 +662,9 @@ export async function POST(request: Request) {
     // Derived metadata — a coverage failure must NEVER fail an ingest that already
     // stored + logged. Awaited but non-fatal: log loudly and move on.
     try {
-      await upsertCoverageForUpload({ reportKey, tableName, rows: uniqueRows })
+      // INB-166: pass the ingest's date range so window-per-pull reports whose fact table has no end
+      // column (business_report) can set data_through = the window END (date_range_end), not the start.
+      await upsertCoverageForUpload({ reportKey, tableName, rows: uniqueRows, dateRangeStart, dateRangeEnd })
     } catch (e) {
       console.error(`[ingest] report_coverage maintenance failed for ${reportKey ?? '(null key)'}: ${(e as Error).message}`)
     }

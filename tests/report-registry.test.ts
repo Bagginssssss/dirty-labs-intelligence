@@ -46,12 +46,12 @@ const LIVE_SCHEMA: Record<string, string[]> = {
 // Seed integrity
 // ---------------------------------------------------------------------------
 
-test('seed: 51 rows, unique keys, valid enums, 49 active / 2 planned', async () => {
+test('seed: 52 rows, unique keys, valid enums, 50 active / 2 planned', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  assert.equal(REPORT_REGISTRY_SEED.length, 51) // INB-160: +fba_customer_returns, +amazon_reviews, +amazon_rating_snapshots (all active)
+  assert.equal(REPORT_REGISTRY_SEED.length, 52) // INB-165: +si_rank_b09b7z4gpz (active)
   const keys = new Set(REPORT_REGISTRY_SEED.map(r => r.report_key))
-  assert.equal(keys.size, 51, 'report_keys are unique')
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 49)
+  assert.equal(keys.size, 52, 'report_keys are unique')
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 50)
   assert.equal(REPORT_REGISTRY_SEED.filter(r => !r.is_active).length, 2)
   const GROUPS = new Set(['Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save', 'Virtual Bundles', 'SmartScout', 'ScaleInsights', 'Customer Voice'])
   const CADENCES = new Set(['weekly', 'monthly', 'snapshot_weekly', 'ad_hoc'])

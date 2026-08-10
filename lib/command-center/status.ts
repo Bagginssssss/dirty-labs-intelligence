@@ -203,6 +203,7 @@ function weekCells(
   today: string,
   n: number,
   coveringWindowDays: number | null,
+  windowPerPull: boolean,
 ): StripCell[] {
   const missing: StripCellState = eventDriven || mode === 'snapshot' ? 'neutral' : 'gap'
   // Snapshots pulled mid-week land in the week ending the UPCOMING Saturday, so the snapshot
@@ -210,11 +211,10 @@ function weekCells(
   // empty forever). Weekly/monthly modes end at the last COMPLETED Saturday.
   const anchor = mode === 'snapshot' ? weekEndSaturday(today) : mostRecentSaturday(today)
 
-  // Set-membership fill (all reports except covering-window): map each coverage period to its
-  // week-ending Saturday. Covering-window reports (S&S) instead label a snapshot at its window
-  // START and cover [date, date + window] — see the per-cell interval test below.
+  // Set-membership fill (points only): map each coverage period to its week-ending Saturday.
+  // Covering-window (S&S legacy) and window-per-pull (INB-166) instead fill by INTERVAL intersection.
   const covered = new Set<string>()
-  if (coveringWindowDays == null) {
+  if (coveringWindowDays == null && !windowPerPull) {
     for (const e of coverageEnds) covered.add(e.periodType === 'weekly' ? e.periodEnd : weekEndSaturday(e.periodEnd))
   }
 
@@ -223,11 +223,16 @@ function weekCells(
   d.setUTCDate(d.getUTCDate() - 7 * (n - 1))
   for (let i = 0; i < n; i++) {
     const end = d.toISOString().slice(0, 10)
-    // A week-cell spans [end-6, end]; a covering-window snapshot fills it when its
-    // [periodEnd, periodEnd+window] interval intersects that span.
-    const filled = coveringWindowDays == null
-      ? covered.has(end)
-      : coverageEnds.some(e => e.periodEnd <= end && addDays(e.periodEnd, coveringWindowDays) >= addDays(end, -6))
+    const spanStart = addDays(end, -6) // the week-cell spans [end-6, end]
+    // INB-166 window-per-pull: fill when any coverage row's stored [periodStart, periodEnd] span
+    // intersects the cell. Consecutive weekly pulls of ~30-day windows overlap by ~23 days, so
+    // adjacent windows fill overlapping cells → a continuous strip (no false gap between pulls).
+    const filled = windowPerPull
+      ? coverageEnds.some(e => e.periodStart != null && e.periodStart <= end && e.periodEnd >= spanStart)
+      : coveringWindowDays == null
+        ? covered.has(end)
+        // Covering-window snapshot fills when [periodEnd, periodEnd+window] intersects the cell.
+        : coverageEnds.some(e => e.periodEnd <= end && addDays(e.periodEnd, coveringWindowDays) >= spanStart)
     cells.push({ periodEnd: end, label: `W/E ${end}`, state: filled ? 'filled' : missing })
     d.setUTCDate(d.getUTCDate() + 7)
   }
@@ -245,12 +250,15 @@ export function buildStrip(p: {
   coveringWindowDays?: number | null
   // Pull-date-shaped monthly tiles (INB-160) — anchor the strip at the current month (see monthlyStrip).
   monthlyPullDate?: boolean
+  // Window-per-pull reports (INB-166) — coverage rows are multi-day [periodStart, periodEnd] spans;
+  // the strip fills every week-cell a span intersects (interval-fill), not just the end-week.
+  windowPerPull?: boolean
 }): StripCell[] {
   const n = p.n ?? 8
   const cells =
     p.mode === 'monthly'
       ? monthlyStrip(p.coverageEnds, p.eventDriven, p.today, n, p.monthlyPullDate ?? false)
-      : weekCells(p.coverageEnds, p.eventDriven, p.mode, p.today, n, p.coveringWindowDays ?? null)
+      : weekCells(p.coverageEnds, p.eventDriven, p.mode, p.today, n, p.coveringWindowDays ?? null, p.windowPerPull ?? false)
 
   // Before the report's first-ever coverage there was no expectation of data, so a cell earlier
   // than the earliest covered period reads NEUTRAL, not a red gap. (Generalizes across modes; a

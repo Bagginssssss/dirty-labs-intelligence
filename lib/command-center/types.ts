@@ -7,6 +7,8 @@ export type StripCell = { periodEnd: string; label: string; state: StripCellStat
 
 // A coverage period reduced to what status/strip need.
 export type CoverageEnd = {
+  periodStart?: string // INB-166 — window-per-pull spans [periodStart, periodEnd]; the strip fills every
+                       // week-cell the span intersects. Absent for point/weekly/monthly periods.
   periodEnd: string
   periodType: 'weekly' | 'monthly' | 'snapshot'
   dataThrough: string | null // max source date within the period (INB-147); null until backfilled

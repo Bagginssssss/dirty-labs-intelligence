@@ -12,7 +12,8 @@
     "check:upsert": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/test-register.mjs scripts/check-upsert-constraints.mjs",
     "check:registry": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/test-register.mjs scripts/check-registry.mjs",
     "backfill": "node scripts/backfill-ingest.mjs",
-    "backfill:coverage": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/test-register.mjs scripts/inb146-backfill.mjs"
+    "backfill:coverage": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/test-register.mjs scripts/inb146-backfill.mjs",
+    "backfill:window-coverage": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/test-register.mjs scripts/inb166-window-coverage.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",

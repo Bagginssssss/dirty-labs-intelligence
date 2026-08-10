@@ -11,7 +11,7 @@ Agentic PPC manager — not primarily a dashboard. AI agent understands Dirty La
 - Live URL: https://dirty-labs-intelligence.vercel.app
 - GitHub: https://github.com/Bagginssssss/dirty-labs-intelligence
 - Local: /Users/darrenbilbao/dirty-labs-intelligence
-- Current migration: 055
+- Current migration: 056
 
 ## Tech Stack
 - Next.js 16, TypeScript, Tailwind CSS, App Router
@@ -110,7 +110,7 @@ app/
     analyze/route.ts     — POST AI analysis endpoint, all analysis types
     calculate-metrics/route.ts — POST derived metrics calculation
     health/route.ts      — GET health check
-supabase/migrations/     — 055 migration files (001–055)
+supabase/migrations/     — 056 migration files (001–056)
 ```
 
 ## Database Tables (55 migrations)

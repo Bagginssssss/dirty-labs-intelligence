@@ -62,10 +62,13 @@ const REJECT_CSV = [SQP_HEADER, sqpRow('alpha'), sqpRow(''), sqpRow('charlie')].
 // Detects as scale_insights_keyword_rank (tracked + keyword + query_volume + a
 // YYYY-MM-DD date column header). The mapper UNPIVOTS: one CSV row → one mapped
 // row per date column with a rank value. 2 CSV rows × 3 date columns = 6 mapped.
+// Uses a REGISTERED rank ASIN (B09B7YS1VK → si_rank_b09b7ys1vk). INB-166's item-4 guard 400s a
+// known report_type that derives NO report_key, so an unregistered test ASIN would now be blocked
+// before the counter-model path — the ASIN is irrelevant to the unpivot expansion this asserts.
 const EXPANSION_CSV = [
   'ASIN,Title,Keyword,Tracked,Query Volume,2026-06-25,2026-06-26,2026-06-27',
-  'B0TEST00001,Test Product,laundry soap,Yes,1000,5,6,7',
-  'B0TEST00001,Test Product,dish soap,Yes,800,11,12,13',
+  'B09B7YS1VK,Test Product,laundry soap,Yes,1000,5,6,7',
+  'B09B7YS1VK,Test Product,dish soap,Yes,800,11,12,13',
 ].join('\n')
 
 async function postCsv(csv: string): Promise<Record<string, unknown>> {

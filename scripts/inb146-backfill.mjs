@@ -34,6 +34,15 @@ for (const r of active) {
     continue
   }
 
+  // INB-166: window-per-pull reports (business_report_child_asin, subscribe_and_save) are rebuilt by
+  // scripts/inb166-window-coverage.mjs — their coverage needs the ingest date_range_end, which the
+  // source-date-only datesToPeriods path here cannot see. SKIP them so this full-rebuild script never
+  // clobbers the window rows with the old bucketing.
+  if (cfg.windowPerPull) {
+    console.log(`SKIP  ${r.report_key.padEnd(34)} windowPerPull — rebuilt by inb166-window-coverage.mjs`)
+    continue
+  }
+
   // 1. distinct source dates through the discriminator (bounded RPC).
   let dates
   try {

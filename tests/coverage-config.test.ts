@@ -25,8 +25,16 @@ test('modes are valid; event_driven true only for the bid log + rule change logs
   }
 })
 
-test('covering-window: subscribe_and_save has a 30d window; no other report does', () => {
-  const withWindow = Object.entries(COVERAGE_CONFIG).filter(([, c]) => c.coveringWindowDays != null).map(([t]) => t)
-  assert.deepEqual(withWindow, ['subscribe_and_save'])
-  assert.equal(COVERAGE_CONFIG.subscribe_and_save.coveringWindowDays, 30)
+test('INB-166 window-per-pull: business_report + subscribe_and_save; S&S end-column; no fixed covering-window remains', () => {
+  const windowed = Object.entries(COVERAGE_CONFIG).filter(([, c]) => c.windowPerPull).map(([t]) => t).sort()
+  assert.deepEqual(windowed, ['business_report', 'subscribe_and_save'])
+  // Both are snapshot-mode multi-day spans (period_start ≠ period_end).
+  assert.equal(COVERAGE_CONFIG.business_report.mode, 'snapshot')
+  assert.equal(COVERAGE_CONFIG.subscribe_and_save.mode, 'snapshot')
+  // S&S window end is a row column (Reporting Period End); business_report has none → the ingest
+  // payload's date_range_end supplies it at write time.
+  assert.equal(COVERAGE_CONFIG.subscribe_and_save.windowEndColumn, 'date_range_end')
+  assert.equal(COVERAGE_CONFIG.business_report.windowEndColumn, undefined)
+  // The legacy fixed covering-window (coveringWindowDays) is fully removed.
+  assert.deepEqual(Object.entries(COVERAGE_CONFIG).filter(([, c]) => c.coveringWindowDays != null).map(([t]) => t), [])
 })

@@ -27,7 +27,7 @@ type RegistryRowDb = {
   sort_order: number | null
   notes: string | null
 }
-type CoverageRowDb = { report_key: string; period_end: string; period_label: string; period_type: 'weekly' | 'monthly' | 'snapshot'; data_through: string | null }
+type CoverageRowDb = { report_key: string; period_start: string; period_end: string; period_label: string; period_type: 'weekly' | 'monthly' | 'snapshot'; data_through: string | null }
 
 export async function loadCommandCenterUncached(brandId: string, today: string): Promise<CommandCenterVM> {
   const cutoff = addDays(today, -COVERAGE_WINDOW_DAYS)
@@ -41,7 +41,7 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
     // (report_key, period_start) is the table's UNIQUE key → a stable total order.
     fetchAll<CoverageRowDb>(() => supabaseAdmin
       .from('report_coverage')
-      .select('report_key,period_end,period_label,period_type,data_through')
+      .select('report_key,period_start,period_end,period_label,period_type,data_through')
       .gte('period_end', cutoff)
       .order('report_key').order('period_start')),
     // latest-first (for the per-key reduce below), id PK tiebreaker for stable paging.
@@ -71,7 +71,7 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
     const eventDriven = cfg?.eventDriven ?? false
     const mode = cfg?.mode
     const rows = coverageByKey.get(r.report_key) ?? []
-    const coverageEnds: CoverageEnd[] = rows.map(c => ({ periodEnd: c.period_end, periodType: c.period_type, dataThrough: c.data_through }))
+    const coverageEnds: CoverageEnd[] = rows.map(c => ({ periodStart: c.period_start, periodEnd: c.period_end, periodType: c.period_type, dataThrough: c.data_through }))
     const lastUploadAt = lastUploadByKey.get(r.report_key) ?? null
 
     const latest = rows.reduce<CoverageRowDb | null>((m, c) => (m === null || c.period_end > m.period_end ? c : m), null)
@@ -111,7 +111,7 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
       // ad_hoc reports (COGS) aren't a periodic series — a strip of one effective date reads as a
       // broken empty grey bar, so suppress it (INB-162 addendum 2).
       strip: r.is_active && mode && r.cadence !== 'ad_hoc'
-        ? buildStrip({ mode, eventDriven, coverageEnds, today, coveringWindowDays: cfg?.coveringWindowDays ?? null, monthlyPullDate })
+        ? buildStrip({ mode, eventDriven, coverageEnds, today, coveringWindowDays: cfg?.coveringWindowDays ?? null, monthlyPullDate, windowPerPull: cfg?.windowPerPull ?? false })
         : [],
     }
   })

@@ -122,6 +122,24 @@ test('snapshot strip includes the in-progress week — a Monday-captured snapsho
   assert.equal(strip[strip.length - 1].state, 'filled', 'same-day snapshot fills the in-progress week')
 })
 
+test('INB-166 window-per-pull: consecutive weekly 30-day windows overlap → CONTIGUOUS filled strip (no false gap)', () => {
+  // Two pulls a week apart, each a ~30-day window ([start, end] stored on the coverage row) →
+  // they overlap by ~23 days. Interval-fill must fill every week-cell EITHER window intersects, with
+  // no un-filled cell between them (the old point-fill filled only each window's end-week → gaps).
+  const coverageEnds = [
+    { periodStart: '2026-06-12', periodEnd: '2026-07-12', periodType: 'snapshot' as const, dataThrough: '2026-07-12' },
+    { periodStart: '2026-06-19', periodEnd: '2026-07-19', periodType: 'snapshot' as const, dataThrough: '2026-07-19' },
+  ]
+  const strip = buildStrip({ mode: 'snapshot', eventDriven: false, coverageEnds, today: '2026-07-20', windowPerPull: true })
+  const states = strip.map(c => c.state)
+  const firstFilled = states.indexOf('filled')
+  const lastFilled = states.lastIndexOf('filled')
+  assert.ok(lastFilled - firstFilled + 1 >= 5, 'the overlapping windows fill a run of ≥5 week-cells')
+  for (let i = firstFilled; i <= lastFilled; i++) {
+    assert.equal(strip[i].state, 'filled', `contiguous fill between pulls — no gap/neutral at ${strip[i].periodEnd}`)
+  }
+})
+
 test('covering-window (S&S): a snapshot fills every week-cell its 30-day window intersects', () => {
   // S&S labels a snapshot at its window START and it covers [date, date+30]. today 2026-07-13.
   // A snapshot dated 2026-06-20 covers 06-20…07-20 → must fill every week-cell in that span, not just one.

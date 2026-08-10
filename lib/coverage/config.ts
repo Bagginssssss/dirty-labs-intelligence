@@ -35,6 +35,14 @@ export type CoverageTableConfig = {
   // goes due once a new month starts without a pull. Without this, a mid-month first pull reads a
   // permanent false OVERDUE (the prior-month check never matches). INB-160 (Amazon reviews/snapshots).
   monthlyPullDate?: boolean
+  // INB-166 — window-per-pull reports (business_report_child_asin, subscribe_and_save): each pull is a
+  // ~30-day period-aggregate, so coverage is ONE row per pull spanning [window_start, window_end] with
+  // data_through = window_end (NOT the start). period_type stays 'snapshot' but the span is multi-day,
+  // so period_start ≠ period_end is expected (unlike single-day snapshots). The maintain/backfill write
+  // path takes the end from `windowEndColumn` on the row (S&S) or the ingest date_range_end param
+  // (business_report, no column). The inb146 backfill SKIPS these (rebuilt by inb166-window-coverage).
+  windowPerPull?: boolean
+  windowEndColumn?: string
 }
 
 export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
@@ -44,9 +52,18 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   sp_targeting_report:              { periodColumn: 'report_date',     mode: 'weekly',   eventDriven: false },
   purchased_product_report:         { periodColumn: 'report_date',     mode: 'weekly',   eventDriven: false },
   // Seller Central
-  business_report:                  { periodColumn: 'report_date',     mode: 'monthly',  eventDriven: false },
+  // INB-166: window-per-pull — one coverage row per pull spanning [report_date, date_range_end],
+  // data_through = date_range_end. business_report has NO end column (report_date is the window START),
+  // so the live write takes date_range_end from the ingest payload; the backfill joins the ingestion
+  // log. mode 'snapshot' (not monthly — a 30-day rollup pulled weekly is neither clean weekly nor
+  // monthly). Rebuilt by scripts/inb166-window-coverage.mjs (inb146 skips it).
+  business_report:                  { periodColumn: 'report_date',     mode: 'snapshot', eventDriven: false, windowPerPull: true },
   business_report_daily:            { periodColumn: 'report_date',     mode: 'weekly',   eventDriven: false },
-  subscribe_and_save:               { periodColumn: 'report_date',     mode: 'snapshot', eventDriven: false, coveringWindowDays: 30 },
+  // INB-166: window-per-pull — one coverage row per pull spanning [report_date, date_range_end],
+  // data_through = date_range_end. The window end is on the row (Reporting Period End). No fixed
+  // coveringWindowDays: the exact end is stored, so the tile reads "Data through <end>". Rebuilt by
+  // scripts/inb166-window-coverage.mjs (inb146 skips it).
+  subscribe_and_save:               { periodColumn: 'report_date',     mode: 'snapshot', eventDriven: false, windowPerPull: true, windowEndColumn: 'date_range_end' },
   virtual_bundle_sales_snapshots:   { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
   virtual_bundle_sales_daily:       { periodColumn: 'sale_date',       mode: 'weekly',   eventDriven: false },
   // Brand Analytics — weekly Saturday anchors (SQP is mixed-cadence: monthly era + weekly)
