@@ -17,12 +17,13 @@ import { REPORT_REGISTRY_SEED } from '../lib/report-registry.ts'
 import { coverageFilterValues } from '../lib/coverage/discriminator.ts'
 import { COVERAGE_CONFIG } from '../lib/coverage/config.ts'
 import { datesToPeriods } from '../lib/coverage/buckets.ts'
+import { resolvePairedCoverage, pullIntervalDays } from '../lib/coverage/paired.ts'
 
 const BRAND = process.env.INB146_BRAND_ID ?? '47a96175-ed58-4104-a2ff-c925d6143309'
 
 const active = REPORT_REGISTRY_SEED.filter(r => r.is_active)
 let failed = 0
-let totNew = 0, totChanged = 0, totUnchanged = 0, totEmpty = 0
+let totNew = 0, totChanged = 0, totUnchanged = 0, totEmpty = 0, totDivergent = 0
 
 console.log(`INB-146 coverage backfill — brand ${BRAND}, ${active.length} active reports\n`)
 
@@ -47,13 +48,33 @@ for (const r of active) {
   let dates
   try {
     const filterValues = coverageFilterValues(r.discriminator) // throws on is_null shape
-    const { data, error } = await supabaseAdmin.rpc('get_coverage_dates', {
-      p_brand_id: BRAND,
-      p_source_table: r.target_table,
-      p_filter_values: filterValues,
-    })
-    if (error) throw new Error(error.message)
-    dates = (data ?? []).map(x => String(x.d).slice(0, 10))
+    const rpcDates = async (fv) => {
+      const { data, error } = await supabaseAdmin.rpc('get_coverage_dates', {
+        p_brand_id: BRAND, p_source_table: r.target_table, p_filter_values: fv,
+      })
+      if (error) throw new Error(error.message)
+      return (data ?? []).map(x => String(x.d).slice(0, 10))
+    }
+
+    if (cfg.pairedDiscriminator && Array.isArray(filterValues) && filterValues.length > 1) {
+      // INB-168: AND-paired metrics (sns_dashboard_daily) — resolve to min(max) across values, NOT the
+      // union, so a stale half cannot overstate coverage. Query per value, then cap at the lagging max.
+      const perValueDates = {}
+      for (const v of filterValues) perValueDates[v] = await rpcDates([v])
+      const res = resolvePairedCoverage(perValueDates, pullIntervalDays(cfg.mode))
+      dates = res.dates
+      if (res.divergence.level !== 'none') {
+        totDivergent++
+        const tag = res.divergence.level === 'warn' ? 'WARN ' : 'INFO '
+        const gap = res.divergence.gapDays === Infinity ? 'no-data' : `${res.divergence.gapDays}d`
+        console.warn(
+          `${tag} ${r.report_key.padEnd(34)} discriminator divergence — lagging [${res.divergence.laggingValues.join(', ')}] ` +
+          `by ${gap}; data_through capped at ${res.capDate ?? 'none'} (union max would overstate)`,
+        )
+      }
+    } else {
+      dates = await rpcDates(filterValues) // union / single-value / whole-table (unchanged behavior)
+    }
   } catch (e) {
     console.error(`FAIL  ${r.report_key} (${r.target_table}) — read: ${e.message}`)
     failed++
@@ -126,7 +147,7 @@ for (const r of active) {
 }
 
 console.log(
-  `\nTotals: new ${totNew}, changed ${totChanged}, unchanged ${totUnchanged}, empty ${totEmpty}, failed ${failed}`,
+  `\nTotals: new ${totNew}, changed ${totChanged}, unchanged ${totUnchanged}, empty ${totEmpty}, divergent ${totDivergent}, failed ${failed}`,
 )
 if (failed > 0) {
   console.error(`\n✗ ${failed} report(s) failed — see FAIL lines above.`)

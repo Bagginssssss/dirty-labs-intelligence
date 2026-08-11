@@ -43,6 +43,13 @@ export type CoverageTableConfig = {
   // (business_report, no column). The inb146 backfill SKIPS these (rebuilt by inb166-window-coverage).
   windowPerPull?: boolean
   windowEndColumn?: string
+  // INB-168 — the discriminator's values are CO-EMITTED metrics that must ALL be present (a paired
+  // Sales/Share/etc. export writes both columns of the pair on the same date). In the REBUILD path,
+  // such a report's data_through is min(max(date)) across values, not max over the union, so a stale
+  // half cannot make the tile green (the frozen reorder_share canary in INB-166). See lib/coverage/
+  // paired.ts. NOT set on the SB/SBV ad_type tables: those sub-types are alternatives that legitimately
+  // arrive on different dates, so union is correct for them. Rebuild-path only (post-upload unchanged).
+  pairedDiscriminator?: boolean
 }
 
 export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
@@ -79,7 +86,10 @@ export const COVERAGE_CONFIG: Record<string, CoverageTableConfig> = {
   smartscout_subcategory_brands:    { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
   smartscout_subcategory_products:  { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
   // Subscribe & Save Dashboard (INB-144) — dailies bucketed to weeks; snapshots point-in-time
-  sns_dashboard_daily:              { periodColumn: 'metric_date',     mode: 'weekly',   eventDriven: false },
+  // INB-168: pairedDiscriminator — the 5 sns_dashboard_daily reports each pair two co-emitted metrics
+  // (reorder_sales/sns_sales, reorder_rate/sns_sales_share, active_subscriptions/_ly, …). Rebuild
+  // resolves data_through to min(max) across the pair so a stale half can't overstate coverage.
+  sns_dashboard_daily:              { periodColumn: 'metric_date',     mode: 'weekly',   eventDriven: false, pairedDiscriminator: true },
   sns_dashboard_snapshots:          { periodColumn: 'snapshot_date',   mode: 'snapshot', eventDriven: false },
   // SKU Economics (INB-162) — weekly parent; week_start is the period-START anchor (one row
   // per week), so the tile logic treats a completed week as fully pulled (weekAnchoredAtStart).
