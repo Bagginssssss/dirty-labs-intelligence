@@ -9,10 +9,10 @@
 //   OPTIMISTIC    rebuild > stored (rebuild reports LATER)  → DEFECT — investigate before trusting
 //
 // The upload path and the rebuild legitimately differ in a few places (SKU Economics week-anchored,
-// COGS effective-from, amazon_reviews from scraped_at), so this is a REPORT to triage, not an
-// assertion — CONSERVATIVE/EQUAL are expected; only OPTIMISTIC is a real problem. Exit is always 0;
-// OPTIMISTIC rows are marked ✗ for the human to act on. (Convert to a hard assertion once the expected
-// set is known.)
+// COGS effective-from, amazon_reviews from scraped_at), so CONSERVATIVE/EQUAL are expected and pass;
+// only OPTIMISTIC is a real problem. INB-168 G4: the expected set was confirmed all-EQUAL AFTER the
+// full backfill rewrote report_coverage through the new path, so this is now a HARD GUARD —
+// OPTIMISTIC (rebuild overstates coverage = the union bug resurfacing) exits 1; everything else exits 0.
 //
 // windowPerPull reports (business_report_child_asin, subscribe_and_save) are EXCLUDED — they are
 // rebuilt by scripts/inb166-window-coverage.mjs and skipped by the inb146 rebuild, so re-deriving them
@@ -82,4 +82,8 @@ for (const [k, v, rb, st, note] of rows) {
   console.log(k.padEnd(34), v.padEnd(14), String(rb).padEnd(12), String(st).padEnd(12), note)
 }
 console.log(`\nOPTIMISTIC (rebuild overstates — DEFECT): ${optimistic}`)
-if (optimistic > 0) console.log('  → investigate each ✗ before trusting the rebuild. (Report only; exit 0.)')
+if (optimistic > 0) {
+  console.error('  ✗ the rebuild overstates coverage for the report(s) marked above — the union bug has resurfaced.')
+  process.exit(1)
+}
+console.log('✓ no report overstates coverage — the rebuild is at least as conservative as the upload path.')
