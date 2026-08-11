@@ -73,6 +73,8 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
   { report_key: 'sns_dashboard_ltv', display_name: 'S&S Snapshot — Subscriber LTV by Segment', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['subscriber_ltv'] }, requires_period_dates: true, is_active: true, sort_order: 7, notes: 'Trailing 24-month avg GMS by segment x purchase type; values as-of capture date. No backfill — history starts at first capture.' },
   { report_key: 'sns_dashboard_avg_reorders', display_name: 'S&S Snapshot — Avg Reorders (Sub vs Non)', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['avg_reorders'] }, requires_period_dates: true, is_active: true, sort_order: 8, notes: 'Trailing 12 months; values as-of capture date. No backfill — history starts at first capture.' },
   { report_key: 'sns_dashboard_retention', display_name: 'S&S Snapshot — Subscriber Retention', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['subscriber_retention'] }, requires_period_dates: true, is_active: true, sort_order: 9, notes: 'Trailing window undocumented (likely 12mo, unverified); values as-of capture date. No backfill — history starts at first capture.' },
+  // INB-164 — Sales by Number of Deliveries: 4th snapshot on the shared table, discriminated on report=deliveries_breakdown. Appended at sort_order 10 (no shift of the existing group).
+  { report_key: 'sns_dashboard_deliveries', display_name: 'S&S Snapshot — Sales by Number of Deliveries', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['deliveries_breakdown'] }, requires_period_dates: true, is_active: true, sort_order: 10, notes: 'Shipped revenue by delivery-count segment (absolute dollars; the chart shows proportions). Open bucket list — Amazon has widened it before, so labels are stored verbatim. Snapshot as-of access day; no backfill.' },
 
   // ── Virtual Bundles ─────────────────────────────────────────────────────────────
   { report_key: 'vb_sales_summary', display_name: 'VB Sales (Summary)', source_group: 'Virtual Bundles', cadence: 'weekly', pull_period: 'Rolling 90d', target_table: 'virtual_bundle_sales_snapshots', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Amazon pushes by email on Tuesdays; multi-section 90-day snapshot export.' },
@@ -248,6 +250,7 @@ export function deriveReportKey(
         subscriber_ltv: 'sns_dashboard_ltv',
         avg_reorders: 'sns_dashboard_avg_reorders',
         subscriber_retention: 'sns_dashboard_retention',
+        deliveries_breakdown: 'sns_dashboard_deliveries', // INB-164
       }
       const reports = distinctField(mappedRows, 'report')
       if (reports.length !== 1 || !REPORT_TO_KEY[reports[0]]) {

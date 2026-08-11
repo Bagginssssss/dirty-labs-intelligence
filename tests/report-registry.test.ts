@@ -46,12 +46,12 @@ const LIVE_SCHEMA: Record<string, string[]> = {
 // Seed integrity
 // ---------------------------------------------------------------------------
 
-test('seed: 52 rows, unique keys, valid enums, 50 active / 2 planned', async () => {
+test('seed: 53 rows, unique keys, valid enums, 51 active / 2 planned', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  assert.equal(REPORT_REGISTRY_SEED.length, 52) // INB-165: +si_rank_b09b7z4gpz (active)
+  assert.equal(REPORT_REGISTRY_SEED.length, 53) // INB-164: +sns_dashboard_deliveries (active)
   const keys = new Set(REPORT_REGISTRY_SEED.map(r => r.report_key))
-  assert.equal(keys.size, 52, 'report_keys are unique')
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 50)
+  assert.equal(keys.size, 53, 'report_keys are unique')
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 51)
   assert.equal(REPORT_REGISTRY_SEED.filter(r => !r.is_active).length, 2)
   const GROUPS = new Set(['Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save', 'Virtual Bundles', 'SmartScout', 'ScaleInsights', 'Customer Voice'])
   const CADENCES = new Set(['weekly', 'monthly', 'snapshot_weekly', 'ad_hoc'])
@@ -61,10 +61,11 @@ test('seed: 52 rows, unique keys, valid enums, 50 active / 2 planned', async () 
   }
 })
 
-test('seed: requires_period_dates on exactly 15 rows', async () => {
+test('seed: requires_period_dates on exactly 16 rows', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  // 11 + the 3 S&S Dashboard snapshot reports (INB-144) + cogs (INB-162).
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.requires_period_dates).length, 15)
+  // 11 + the 3 S&S Dashboard snapshot reports (INB-144) + cogs (INB-162)
+  // + sns_dashboard_deliveries (INB-164 — a 4th point-in-time snapshot; capture date on the form).
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.requires_period_dates).length, 16)
 })
 
 test('seed: every active target_table exists and every discriminator column is real', async () => {

@@ -21,6 +21,8 @@ const cases: Array<[string, string[], string]> = [
   ['Subscriber LTV', ['calc_customer_segment', 'calc_purchase_type', 'avg_gms (AVG)'], SNAP],
   ['Avg Reorders', ['calc_is_subscriber', 'calc_avg_reorder (CUSTOM)'], SNAP],
   ['Subscriber Retention', ['calc_metric_name', 'calc_retention (CUSTOM)'], SNAP],
+  // INB-164 — Sales by Number of Deliveries (subs_state_delivery_segment is unique to this export)
+  ['Deliveries breakdown', ['subs_state_delivery_segment', 'shipped_revenue (SUM)'], SNAP],
 ]
 
 for (const [label, headers, table] of cases) {

@@ -286,6 +286,13 @@ const SIGNATURES: Array<{
     match: h => has(h, 'calc_metric_name') && has(h, 'calc_retention'),
   },
   {
+    // Sales by Number of Deliveries (snapshot) — INB-164. Absolute shipped revenue per
+    // delivery-count segment. subs_state_delivery_segment co-occurs in no other report.
+    reportType: 'sns_dashboard_snapshots',
+    tableName: 'sns_dashboard_snapshots',
+    match: h => has(h, 'subs_state_delivery_segment') && has(h, 'shipped_revenue'),
+  },
+  {
     // Confirmed Amazon S&S headers normalise as:
     //   "SnS shipped units"              → "sn_s_shipped_units" ... actually:
     //   "SnS shipped units"              → "sns_shipped_units"

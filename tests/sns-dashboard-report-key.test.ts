@@ -25,6 +25,7 @@ const snapCases: Array<[string, string]> = [
   ['subscriber_ltv', 'sns_dashboard_ltv'],
   ['avg_reorders', 'sns_dashboard_avg_reorders'],
   ['subscriber_retention', 'sns_dashboard_retention'],
+  ['deliveries_breakdown', 'sns_dashboard_deliveries'], // INB-164
 ]
 
 for (const [report, key] of snapCases) {

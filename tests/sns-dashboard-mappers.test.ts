@@ -129,12 +129,71 @@ test('snapshot LTV: segment x purchase_type → report+dim1+dim2+value, date fro
   assert.deepEqual(out, [{ brand_id: BRAND, snapshot_date: '2026-07-14', report: 'subscriber_ltv', dim1: 'Established', dim2: 'Subscribe & Save', value: 230.58 }])
 })
 
-test('snapshot avg reorders: dim2 empty', () => {
+test('snapshot avg reorders: dim2 empty (dim1 canonicalized to singular — INB-164)', () => {
   const out = mapSnsDashboardSnapshots({ 'calc_is_subscriber': 'Subscribers', 'calc_avg_reorder (CUSTOM)': '3.7561' }, BRAND, { date_range_start: '2026-07-14' })
-  assert.deepEqual(out, [{ brand_id: BRAND, snapshot_date: '2026-07-14', report: 'avg_reorders', dim1: 'Subscribers', dim2: '', value: 3.7561 }])
+  assert.deepEqual(out, [{ brand_id: BRAND, snapshot_date: '2026-07-14', report: 'avg_reorders', dim1: 'Subscriber', dim2: '', value: 3.7561 }])
 })
 
 test('snapshot retention: 30 Days / 90 Days', () => {
   const out = mapSnsDashboardSnapshots({ 'calc_metric_name': '90 Days', 'calc_retention (CUSTOM)': '0.8407' }, BRAND, { date_range_start: '2026-07-14' })
   assert.deepEqual(out, [{ brand_id: BRAND, snapshot_date: '2026-07-14', report: 'subscriber_retention', dim1: '90 Days', dim2: '', value: 0.8407 }])
+})
+
+// ── INB-164: S&S Sales by Number of Deliveries snapshot (new report) ───────────────
+// Fixtures are byte-exact copies of the real 2026-08-10 exports.
+const uqKey = (r: Record<string, unknown>) => `${r.snapshot_date}|${r.report}|${r.dim1}|${r.dim2}`
+const mapSnap = (name: string) =>
+  fixture(name).rows.flatMap(r => mapSnsDashboardSnapshots(r, BRAND, { date_range_start: '2026-08-10' }))
+
+test('INB-164 deliveries: real export → 6 rows, report=deliveries_breakdown, dim2="", positive dollars', () => {
+  const out = mapSnap('sns-snap-deliveries.csv')
+  assert.equal(out.length, 6)
+  assert.ok(out.every(r => r.report === 'deliveries_breakdown'), 'all report=deliveries_breakdown')
+  assert.ok(out.every(r => r.dim2 === ''), 'dim2 empty string on all six (uq-key guard)')
+  assert.ok(out.every(r => typeof r.value === 'number' && (r.value as number) > 0), 'positive dollar values')
+  // Segment labels stored VERBATIM (open bucket list — no enum validation).
+  assert.deepEqual(out.map(r => r.dim1), [
+    'Cancelled subscriptions after 1 delivery',
+    'Active subscriptions with 1 delivery',
+    'Subscriptions with 2 deliveries',
+    'Subscriptions with 3 deliveries',
+    'Subscriptions with 4 deliveries',
+    'Subscriptions with 5+ deliveries',
+  ])
+  const total = out.reduce((s, r) => s + Number(r.value), 0)
+  assert.ok(Math.abs(total - 6997505.28) < 0.01, `TTM total ${total} ≈ $6,997,505.28`)
+})
+
+test('INB-164 deliveries: same file mapped twice → 6 rows on the uq key, not 12', () => {
+  const keys = new Set([...mapSnap('sns-snap-deliveries.csv'), ...mapSnap('sns-snap-deliveries.csv')].map(uqKey))
+  assert.equal(keys.size, 6)
+})
+
+test('INB-164 deliveries open bucket: an unseen segment label is stored verbatim, not dropped', () => {
+  const out = mapSnsDashboardSnapshots(
+    { 'subs_state_delivery_segment': 'Subscriptions with 6 deliveries', 'shipped_revenue (SUM)': '123.45' },
+    BRAND, { date_range_start: '2026-08-10' })
+  assert.deepEqual(out, [{ brand_id: BRAND, snapshot_date: '2026-08-10', report: 'deliveries_breakdown', dim1: 'Subscriptions with 6 deliveries', dim2: '', value: 123.45 }])
+})
+
+// ── INB-164: avg_reorders label normalization (per-report — avg_reorders ONLY) ─────
+test('INB-164 canon: avg_reorders plural labels canonicalize to singular; singular passes through', () => {
+  assert.equal(mapSnsDashboardSnapshots({ 'calc_is_subscriber': 'Subscribers', 'calc_avg_reorder (CUSTOM)': '3.7561' }, BRAND, { date_range_start: '2026-07-14' })[0].dim1, 'Subscriber')
+  assert.equal(mapSnsDashboardSnapshots({ 'calc_is_subscriber': 'Non-subscribers', 'calc_avg_reorder (CUSTOM)': '1.3258' }, BRAND, { date_range_start: '2026-07-14' })[0].dim1, 'Non-subscriber')
+  assert.equal(mapSnsDashboardSnapshots({ 'calc_is_subscriber': 'Subscriber', 'calc_avg_reorder (CUSTOM)': '3.7387' }, BRAND, { date_range_start: '2026-08-10' })[0].dim1, 'Subscriber')
+})
+
+// ── INB-164 BLOCKER (fail-first vs a flat global canon): subscriber_ltv holds dim1='Non-Subscriber'
+//    (capital S). A global canon lowercases it → matches 'non-subscriber' → rewrites to 'Non-subscriber',
+//    changing the uq key so every future LTV upload INSERTs (40→42→44). Per-report scoping preserves it.
+test('INB-164 blocker: subscriber_ltv dim1 "Non-Subscriber" (capital S) is preserved byte-exact', () => {
+  const out = mapSnap('sns-snap-ltv.csv')
+  assert.ok(out.every(r => r.report === 'subscriber_ltv'))
+  const dims = [...new Set(out.map(r => r.dim1))].sort()
+  assert.deepEqual(dims, ['Established', 'Growing', 'Lost', 'Non-Subscriber'], 'capital-S Non-Subscriber NOT rewritten')
+})
+
+test('INB-164 blocker: LTV fixture mapped twice → 8 rows on the uq key, not 16', () => {
+  const keys = new Set([...mapSnap('sns-snap-ltv.csv'), ...mapSnap('sns-snap-ltv.csv')].map(uqKey))
+  assert.equal(keys.size, 8)
 })
