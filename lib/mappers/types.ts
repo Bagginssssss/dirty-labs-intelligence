@@ -47,6 +47,9 @@ export { parseDate, parseInteger, parseNumeric }
 // Maps SmartScout "Primary Subcategory" display strings to storage codes.
 // Simple snake_case doesn't produce correct codes for all values
 // (e.g. "Laundry Stain Removers" → laundry_stain_removers ≠ laundry_stain_remover).
+// INB-172 (global-by-necessity, keyed on a column value): shared by the SmartScout brands AND products
+// mappers. SAFE — a display string denotes the same subcategory in both exports, so the mapping is
+// identical across the siblings; there is no report for which the same string means something else.
 const SUBCATEGORY_MAP: Record<string, string> = {
   'dishwasher detergent':              'dishwasher_detergent',
   'laundry detergent pacs & tablets':  'laundry_detergent',

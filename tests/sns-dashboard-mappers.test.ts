@@ -197,3 +197,20 @@ test('INB-164 blocker: LTV fixture mapped twice → 8 rows on the uq key, not 16
   const keys = new Set([...mapSnap('sns-snap-ltv.csv'), ...mapSnap('sns-snap-ltv.csv')].map(uqKey))
   assert.equal(keys.size, 8)
 })
+
+// ── INB-172: subscriber_ltv dim2 (calc_purchase_type) is part of uq_sns_dashboard_snapshots.
+//    dim1 is already trimmed; dim2 was not, so a padded value would form a DIFFERENT uq key and
+//    silently INSERT a duplicate instead of upserting. Trim dim2 too. ──
+test('INB-172: subscriber_ltv dim2 is trimmed (padded calc_purchase_type → clean uq key)', () => {
+  const out = mapSnsDashboardSnapshots(
+    { 'calc_customer_segment': 'Established', 'calc_purchase_type': '  Subscribe & Save  ', 'avg_gms (AVG)': '230.58' },
+    BRAND, { date_range_start: '2026-07-14' })
+  assert.deepEqual(out, [{ brand_id: BRAND, snapshot_date: '2026-07-14', report: 'subscriber_ltv', dim1: 'Established', dim2: 'Subscribe & Save', value: 230.58 }])
+})
+
+test('INB-172: the real LTV fixture is byte-identical after the dim2 trim (clean values unaffected)', () => {
+  const out = mapSnap('sns-snap-ltv.csv')
+  assert.equal(out.length, 8)
+  assert.ok(out.every(r => r.report === 'subscriber_ltv'))
+  assert.deepEqual([...new Set(out.map(r => r.dim2))].sort(), ['One-time Purchases', 'Subscribe & Save'])
+})

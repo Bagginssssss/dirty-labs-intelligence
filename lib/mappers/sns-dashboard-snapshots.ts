@@ -45,7 +45,10 @@ export function mapSnsDashboardSnapshots(row: RawRow, brandId: string, context?:
   if (present('calc_customer_segment')) {
     report = 'subscriber_ltv'
     dim1 = get('', 'calc_customer_segment').trim()
-    dim2 = get('', 'calc_purchase_type')
+    // INB-172 — dim2 is part of uq_sns_dashboard_snapshots; trim it (like dim1) so a padded
+    // purchase-type can't form a different uq key and silently INSERT a duplicate. No current
+    // export has padded values → byte-identical output today; this is defensive.
+    dim2 = get('', 'calc_purchase_type').trim()
     value = parseNumeric(get('', 'avg_gms (AVG)', 'avg_gms'))
   } else if (present('calc_is_subscriber')) {
     report = 'avg_reorders'

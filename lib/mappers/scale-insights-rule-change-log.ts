@@ -22,6 +22,10 @@ export interface ScaleInsightsRuleChangeLogRow extends MappedRow {
   details: string | null
 }
 
+// INB-172 (global-by-necessity, keyed on the Action column value): the three exports (import/negative/
+// revive) share this one table + mapper. SAFE — the map IS the discriminator; each Action value uniquely
+// and consistently determines log_type, each file carries only its own Action, and unmatched actions →
+// null → dropped by REQUIRED_NOT_NULL. No sibling report assigns a different meaning to the same key.
 const LOG_TYPE_BY_ACTION: Record<string, 'import' | 'negative' | 'revive'> = {
   'import rule': 'import',
   'negative rule': 'negative',

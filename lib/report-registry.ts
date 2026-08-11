@@ -118,6 +118,10 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
 const REPORT_KEYS = new Set(REPORT_REGISTRY_SEED.map(r => r.report_key))
 
 // SmartScout stored subcategory code → report_key suffix.
+// INB-172 (global-by-necessity, keyed on a column value): shared by the SmartScout brands AND products
+// report families (two target tables). SAFE — a subcategory code maps to the same slug for both, and
+// the brands_/products_ prefix at the call site disambiguates the final report_key. No sibling assigns
+// a different meaning to the same code, so this stays a single global map.
 const SUBCATEGORY_SLUG: Record<string, string> = {
   laundry_detergent: 'liquid_laundry',
   dishwasher_detergent: 'dishwasher',
@@ -228,6 +232,9 @@ export function deriveReportKey(
     // INB-144 — S&S Dashboard: one reportType per table fans out to fine-grained report_keys
     // by the mapped metric/report field (each file carries exactly one report's rows).
     case 'sns_dashboard_daily': {
+      // INB-172 (global-by-necessity, keyed on the mapped metric slug): shared by the 5 sns_dashboard_daily
+      // reports. SAFE — each metric slug belongs to exactly one report_key, and the keys.size !== 1 guard
+      // below rejects any upload that spans more than one. No sibling reinterprets a slug.
       const SLUG_TO_KEY: Record<string, string> = {
         reorder_sales: 'sns_dashboard_sales',                 sns_sales: 'sns_dashboard_sales',
         reorder_rate: 'sns_dashboard_reorder_share',          sns_sales_share: 'sns_dashboard_reorder_share',
@@ -246,6 +253,9 @@ export function deriveReportKey(
       return validated(levels[0] === 'brand' ? 'ba_repeat_purchase_brand' : 'ba_repeat_purchase_asin', 'repeat purchase level')
     }
     case 'sns_dashboard_snapshots': {
+      // INB-172 (global-by-necessity, keyed on the mapped `report` value): shared by the 4 snapshot
+      // reports. SAFE — each report value maps to exactly one report_key; the reports.length !== 1 guard
+      // below rejects a multi-report upload.
       const REPORT_TO_KEY: Record<string, string> = {
         subscriber_ltv: 'sns_dashboard_ltv',
         avg_reorders: 'sns_dashboard_avg_reorders',
