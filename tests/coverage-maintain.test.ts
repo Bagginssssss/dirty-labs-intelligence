@@ -159,24 +159,24 @@ test('maintain window-per-pull: subscribe_and_save takes the window end from the
 })
 
 // ── INB-166 item-4 guard: a known report_type deriving NO report_key → 400, no coverage ──
-test('guard: the real "Reorder & S&S Share" header signature derives NULL → 400 naming report_type + header, no coverage', async () => {
+// NOTE: the original example (the doubled-space Share export) is FIXED by INB-167 — it now resolves
+// to sns_dashboard_reorder_share (that case is covered in tests/sns-dashboard-mappers.test.ts). The
+// guard still needs a genuinely-null case: a keyword-rank upload for an UNREGISTERED ASIN →
+// si_rank_<unknown> → validated() null → 400.
+test('guard: a known report_type (keyword-rank) with an unregistered ASIN → NULL report_key → 400, no coverage', async () => {
   coverageUpserts.length = 0
   failCoverage = false
-  // The real Share export's S&S column is "Subscribe  &  Save (CUSTOM)" (DOUBLED spaces around &),
-  // which normalizes onto the Sales export's subscribe_save_custom (→ sns_sales), so the file spans
-  // two report_keys (reorder_share + sales) and deriveReportKey returns NULL. INB-167 fixes the
-  // mapping; this asserts the guard BLOCKS the upload (400) instead of silently storing into sns_sales.
   const csv = [
-    'calc_date_granularity,Reorder Rate (CUSTOM),Subscribe  &  Save (CUSTOM)',
-    '2026-08-06 00:00:00,0.42,0.31',
+    'ASIN,Title,Keyword,Tracked,Query Volume,2026-06-25',
+    'B0NOTREAL99,Fake Product,laundry soap,Yes,1000,5',
   ].join('\n')
   const body = new FormData()
-  body.append('file', new File([csv], 'ReorderAndSnSShare.csv', { type: 'text/csv' }))
+  body.append('file', new File([csv], 'KeywordRank_Unregistered.csv', { type: 'text/csv' }))
   body.append('brand_id', BRAND)
   const res = await POST(new Request('http://localhost/api/ingest', { method: 'POST', body }))
   assert.equal(res.status, 400)
   const json = await res.json() as Record<string, unknown>
-  assert.match(String(json.error), /sns_dashboard_daily/)              // names the report_type
-  assert.match(String(json.error), /Subscribe {2}& {2}Save \(CUSTOM\)/) // names the exact header signature
+  assert.match(String(json.error), /scale_insights_keyword_rank/)  // names the report_type
+  assert.match(String(json.error), /report_key/)                   // explains the null-key block
   assert.equal(coverageUpserts.length, 0, 'no coverage written on a blocked upload')
 })

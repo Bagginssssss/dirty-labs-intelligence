@@ -3,7 +3,8 @@ import { partitionRequiredNotNull, periodDatesError, periodDateRangeError, dedup
 import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
-import { unmappedSnsDailyColumns } from '@/lib/mappers/sns-dashboard-daily'
+import { unmappedSnsDailyColumns, snsDailyRangeViolations } from '@/lib/mappers/sns-dashboard-daily'
+import type { MappedRow } from '@/lib/mappers/types'
 import { buildSkuEconomicsFees, skuEconomicsWarnings } from '@/lib/mappers/sku-economics'
 import { fbaReturnsWarnings } from '@/lib/mappers/fba-customer-returns'
 import { handleCogsUpload } from '@/lib/cogs-ingest'
@@ -410,6 +411,20 @@ export async function POST(request: Request) {
     // fault_class='unmapped'). Non-fatal — a new Amazon code is flagged at QC, never dropped.
     if (reportType === 'fba_customer_returns') {
       for (const w of fbaReturnsWarnings(parseResult.rows)) ingestErrors.push(w)
+    }
+
+    // INB-167 — S&S Dashboard daily value-range guard: sns_sales is dollars (≥1), sns_sales_share is
+    // a fraction (≤1). A violation means a column was mis-routed (the doubled-space collapse class) —
+    // FAIL LOUDLY before any write, so a mis-mapped file can never corrupt the metric (the guard
+    // that would have caught the original 2026-07-27 break). Same posture as the item-4 null-key guard.
+    if (reportType === 'sns_dashboard_daily') {
+      const violations = snsDailyRangeViolations(mappedRows as MappedRow[])
+      if (violations.length > 0) {
+        return Response.json(
+          { error: `Upload blocked: S&S Dashboard daily value out of range — a column is mis-routed. No rows stored. ${violations.slice(0, 5).join(' | ')}` },
+          { status: 400 },
+        )
+      }
     }
 
     // Derive effective report type for sp_campaign_performance.
