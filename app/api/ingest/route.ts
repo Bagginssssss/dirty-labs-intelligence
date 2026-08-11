@@ -4,6 +4,7 @@ import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { unmappedSnsDailyColumns, snsDailyRangeViolations } from '@/lib/mappers/sns-dashboard-daily'
+import { subscribeAndSaveMixedWindowViolation, subscribeAndSaveNullRevenueViolation } from '@/lib/mappers/subscribe-and-save'
 import type { MappedRow } from '@/lib/mappers/types'
 import { buildSkuEconomicsFees, skuEconomicsWarnings } from '@/lib/mappers/sku-economics'
 import { fbaReturnsWarnings } from '@/lib/mappers/fba-customer-returns'
@@ -424,6 +425,24 @@ export async function POST(request: Request) {
           { error: `Upload blocked: S&S Dashboard daily value out of range — a column is mis-routed. No rows stored. ${violations.slice(0, 5).join(' | ')}` },
           { status: 400 },
         )
+      }
+    }
+
+    // INB-170 — S&S Performance partial-upload guards (two independent failure modes), same posture as
+    // the sns range guard above: FAIL LOUDLY at upload, before any write. (A) MIXED WINDOW — a file
+    // spanning >1 reporting window for one report_date (the 2026-06-22 bundled fragment: 20 rows at
+    // 06-19 + a 3-row tail at 06-20). (B) NULL-REVENUE — an all-null / >50%-null file (a standalone
+    // malformed or partial export). Either → 400 naming the anomaly; no rows stored. The 400 blocks the
+    // whole upload rather than silently partial-storing (the message names exactly which rows are off).
+    if (reportType === 'subscribe_and_save') {
+      const rows = mappedRows as MappedRow[]
+      const mixed = subscribeAndSaveMixedWindowViolation(rows)
+      if (mixed) {
+        return Response.json({ error: `Upload blocked: S&S Performance — ${mixed} No rows were stored.` }, { status: 400 })
+      }
+      const nullRev = subscribeAndSaveNullRevenueViolation(rows)
+      if (nullRev) {
+        return Response.json({ error: `Upload blocked: S&S Performance — ${nullRev} No rows were stored.` }, { status: 400 })
       }
     }
 
