@@ -67,6 +67,27 @@ export function subscribeAndSaveNullRevenueViolation(rows: readonly SnsGuardRow[
   return null
 }
 
+// Guard C (INB-174) — ZEROED BALANCE detector. "Period End Subscription Balance" broke two weeks
+// running, landing rows with active_subscriptions = 0. When >50% of rows are zero (or null) the balance
+// column is broken — but UNLIKE the reject guards A/B, the rest of the file is good (per-SKU
+// revenue/units/penetration intact) and it has broken two consecutive weeks and may continue. So this is
+// NOT a 400: the route STORES the file, NULLs active_subscriptions on every row (NULL renders as a gap;
+// 0 renders as a false cliff — the actual harm), warns, and logs it partial. NOT an all-zero rule — the
+// 2026-08-28 pull is 5 of 22 non-zero (77% zero) and an all-zero rule would pass it. Worst legitimate is
+// 3 of 23 = 13% (the 2026-05-07 low-subs anomaly); the two broken pulls are 77% and 100%, so 50%
+// separates cleanly. Nulls count as zero — the column is nullable, so a future blank-balance export
+// would be null and slip past a `=== 0` test. Returns a warning message, or null if the balance is fine.
+export function subscribeAndSaveZeroBalanceWarning(rows: readonly SnsGuardRow[]): string | null {
+  const total = rows.length
+  if (total === 0) return null
+  const zero = rows.filter(r => r.active_subscriptions === 0 || r.active_subscriptions == null).length
+  if (zero / total > 0.5) {
+    const pct = Math.round((100 * zero) / total)
+    return `${zero}/${total} rows (${pct}%) have active_subscriptions = 0 or null — Period End Subscription Balance appears broken.`
+  }
+  return null
+}
+
 export function mapSubscribeAndSave(row: RawRow, brandId: string, context?: MapperContext): SubscribeAndSaveRow {
   const get = makeGetter(row)
 

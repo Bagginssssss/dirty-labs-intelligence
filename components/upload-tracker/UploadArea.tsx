@@ -7,6 +7,7 @@ import { parseCSV, decodeFileContent } from '@/lib/csv-parser'
 import { detectReportType } from '@/lib/report-detector'
 import { requiresPeriodDates } from '@/lib/ingest-validation'
 import { COVERAGE_CONFIG } from '@/lib/coverage/config'
+import { deriveBannerTone } from '@/lib/upload/banner-tone'
 
 interface IngestResult {
   status: string
@@ -117,7 +118,10 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
   }
 
   const success = result?.status === 'ok'
-  const partial = success && (result.rows_rejected ?? 0) > 0
+  // INB-174: amber when a warning was surfaced (a repair/notice), not only on row rejections — a
+  // zeroed-balance S&S repair rejects nothing but NULLs a column. [info] notes stay green. See
+  // lib/upload/banner-tone.ts.
+  const partial = result != null && deriveBannerTone(result) === 'partial'
 
   return (
     <div id="upload-area" className="border-t border-[#1e1e2e] pt-5 mt-8">
@@ -317,9 +321,16 @@ export function UploadArea({ defaultBrandId }: { defaultBrandId: string }) {
           )}
 
           {result.parse_errors && result.parse_errors.length > 0 && (
+            // INB-174: on a partial (a warning/repair or rejection) the block reads amber, not a muted
+            // grey footnote on a green card — the whole point of item 3 is the operator sees the repair.
             <div className="mt-3">
-              <p className="text-[9px] text-[#64748b] mb-1">Errors</p>
-              <ul className="text-[9px] text-[#475569] space-y-0.5 max-h-24 overflow-y-auto">
+              <p className="text-[9px] mb-1" style={{ color: partial ? '#f59e0b' : '#64748b' }}>
+                {partial ? 'Warnings' : 'Notes'}
+              </p>
+              <ul
+                className="text-[9px] space-y-0.5 max-h-24 overflow-y-auto"
+                style={{ color: partial ? '#f59e0b' : '#64748b' }}
+              >
                 {result.parse_errors.map((e, i) => <li key={i}>{e}</li>)}
               </ul>
             </div>

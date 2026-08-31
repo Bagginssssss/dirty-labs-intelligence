@@ -79,7 +79,10 @@ test('snapshot: form dates required (no date in file) — blank → 400', async 
 })
 
 test('snapshot: with form date → stored (date stamped from the form)', async () => {
-  const res = await post(LTV, { start: '2026-07-14', end: '2026-07-14' })
+  // A recent date (1 day back): INB-174's backdated-snapshot guard rejects a form date_range_start
+  // >14 days before today, so this must use a live date rather than a hardcoded (now-stale) one.
+  const recent = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  const res = await post(LTV, { start: recent, end: recent })
   assert.equal(res.status, 200)
   const json = await res.json()
   assert.equal(json.table, 'sns_dashboard_snapshots')

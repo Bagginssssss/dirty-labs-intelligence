@@ -32,6 +32,28 @@ const KNOWN_DELIVERY_SEGMENTS = new Set([
   'Subscriptions with 5+ deliveries',
 ])
 
+// INB-174 — backdated-snapshot guard. Snapshot exports have NO date column; the export returns
+// CURRENT values regardless of the requested range, so backfilling one is meaningless — it stamps
+// today's values onto an old snapshot_date (the 2026-07-01 54-day and 2026-07-30 32-day phantoms,
+// both from the upload form's date-range fields being populated). Reject a sns_dashboard_snapshots
+// upload whose form date_range_start is >14 days before the upload date, or any amount in the future.
+// Does NOT force snapshot_date to today — a 1-day backdate is legitimate and in active use (the
+// 2026-08-30 run uploaded 2026-08-31). Every legitimate snapshot in history is same-day or 1 day back.
+// Returns a message, or null if clean. uploadDate/dateRangeStart are 'YYYY-MM-DD'.
+export function backdatedSnapshotViolation(dateRangeStart: string | null | undefined, uploadDate: string): string | null {
+  if (!dateRangeStart) return null // no form date → snapshot_date falls back to the upload day (fine)
+  const start = dateRangeStart.slice(0, 10)
+  const days = Math.round((Date.parse(uploadDate + 'T00:00:00Z') - Date.parse(start + 'T00:00:00Z')) / 86400000)
+  if (Number.isNaN(days)) return null
+  if (days < 0) {
+    return `snapshot date ${start} is in the future relative to the upload date ${uploadDate}.`
+  }
+  if (days > 14) {
+    return `snapshot date ${start} is ${days} days before the upload date ${uploadDate} — snapshot exports carry no date column and return current values, so backdating one silently stamps today's values onto an old date (max legitimate backdate is 1 day).`
+  }
+  return null
+}
+
 export function mapSnsDashboardSnapshots(row: RawRow, brandId: string, context?: MapperContext): MappedRow[] {
   const get = makeGetter(row)
   const snapshotDate = context?.date_range_start || new Date().toISOString().slice(0, 10)

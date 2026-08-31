@@ -4,7 +4,8 @@ import { detectReportType, REPORT_TYPE_TO_TABLE } from '@/lib/report-detector'
 import { deriveReportKey } from '@/lib/report-registry'
 import { getMapper, getBatchMapper } from '@/lib/mappers'
 import { unmappedSnsDailyColumns, snsDailyRangeViolations } from '@/lib/mappers/sns-dashboard-daily'
-import { subscribeAndSaveMixedWindowViolation, subscribeAndSaveNullRevenueViolation } from '@/lib/mappers/subscribe-and-save'
+import { subscribeAndSaveMixedWindowViolation, subscribeAndSaveNullRevenueViolation, subscribeAndSaveZeroBalanceWarning } from '@/lib/mappers/subscribe-and-save'
+import { backdatedSnapshotViolation } from '@/lib/mappers/sns-dashboard-snapshots'
 import type { MappedRow } from '@/lib/mappers/types'
 import { buildSkuEconomicsFees, skuEconomicsWarnings } from '@/lib/mappers/sku-economics'
 import { fbaReturnsWarnings } from '@/lib/mappers/fba-customer-returns'
@@ -256,6 +257,7 @@ export async function POST(request: Request) {
   let actualDateEnd: string | null = null
   let reportKey: string | null = null
   const ingestErrors: string[] = []
+  let zeroBalanceNulled = false // INB-174 item 3: a broken-balance S&S upload → store, NULL the column, log partial
 
   try {
     const formData = await request.formData()
@@ -428,12 +430,26 @@ export async function POST(request: Request) {
       }
     }
 
-    // INB-170 — S&S Performance partial-upload guards (two independent failure modes), same posture as
-    // the sns range guard above: FAIL LOUDLY at upload, before any write. (A) MIXED WINDOW — a file
-    // spanning >1 reporting window for one report_date (the 2026-06-22 bundled fragment: 20 rows at
-    // 06-19 + a 3-row tail at 06-20). (B) NULL-REVENUE — an all-null / >50%-null file (a standalone
-    // malformed or partial export). Either → 400 naming the anomaly; no rows stored. The 400 blocks the
-    // whole upload rather than silently partial-storing (the message names exactly which rows are off).
+    // INB-174 (item 2) — backdated-snapshot guard. Snapshot exports carry no date column, so a
+    // populated upload date-range stamps today's values onto an old snapshot_date (the 2026-07-01
+    // 54-day + 2026-07-30 32-day phantoms). Reject when date_range_start is >14 days back or in the
+    // future. 400 naming the report + both dates; snapshot_date is NOT forced to today (1-day is legit).
+    if (reportType === 'sns_dashboard_snapshots') {
+      const violation = backdatedSnapshotViolation(dateRangeStart, new Date().toISOString().slice(0, 10))
+      if (violation) {
+        return Response.json({ error: `Upload blocked: S&S Dashboard snapshot — ${violation} No rows were stored.` }, { status: 400 })
+      }
+    }
+
+    // INB-170 + INB-174 — S&S Performance upload guards. Two REJECT modes (nothing worth keeping) and
+    // one REPAIR mode (mostly-good file). (A) MIXED WINDOW — a file spanning >1 reporting window for one
+    // report_date (the 2026-06-22 bundled fragment: 20 rows at 06-19 + a 3-row tail at 06-20) → 400.
+    // (B) NULL-REVENUE — an all-null / >50%-null file (a standalone malformed/partial export) → 400.
+    // (C) ZEROED BALANCE (INB-174 item 3) — >50% of rows at active_subscriptions 0/null (Period End
+    // Subscription Balance broken). The rest of the file is good (revenue/units/penetration intact) and
+    // it has broken two weeks running, so this is NOT a 400: STORE the file, NULL active_subscriptions on
+    // every row (NULL = an honest gap; 0 = a false cliff), warn, and log partial. A/B block the whole
+    // upload; C keeps the good columns.
     if (reportType === 'subscribe_and_save') {
       const rows = mappedRows as MappedRow[]
       const mixed = subscribeAndSaveMixedWindowViolation(rows)
@@ -443,6 +459,12 @@ export async function POST(request: Request) {
       const nullRev = subscribeAndSaveNullRevenueViolation(rows)
       if (nullRev) {
         return Response.json({ error: `Upload blocked: S&S Performance — ${nullRev} No rows were stored.` }, { status: 400 })
+      }
+      const zeroBal = subscribeAndSaveZeroBalanceWarning(rows)
+      if (zeroBal) {
+        for (const r of rows) (r as Record<string, unknown>).active_subscriptions = null
+        zeroBalanceNulled = true
+        ingestErrors.push(`[warning] S&S Performance zeroed-balance repair: ${zeroBal} active_subscriptions was NULLED on all ${rows.length} rows (revenue/units/penetration kept) — Period End Subscription Balance was not stored.`)
       }
     }
 
@@ -687,7 +709,7 @@ export async function POST(request: Request) {
       rows_deduplicated: rowsDeduplicated,
       rows_stored: rowsStored,
       rows_rejected: rowsRejected,
-      status: (rowsRejected === 0 && !feeWriteFailed) ? 'success' : rowsStored > 0 ? 'partial' : 'failed',
+      status: (rowsRejected === 0 && !feeWriteFailed && !zeroBalanceNulled) ? 'success' : rowsStored > 0 ? 'partial' : 'failed',
       error_message: ingestErrors.length ? ingestErrors.join(' | ') : null,
       ingestion_method: 'csv_upload',
     })
