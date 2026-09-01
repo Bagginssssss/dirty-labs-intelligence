@@ -46,13 +46,13 @@ const LIVE_SCHEMA: Record<string, string[]> = {
 // Seed integrity
 // ---------------------------------------------------------------------------
 
-test('seed: 53 rows, unique keys, valid enums, 51 active / 2 planned', async () => {
+test('seed: 57 rows, unique keys, valid enums, 54 active / 3 inactive', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  assert.equal(REPORT_REGISTRY_SEED.length, 53) // INB-164: +sns_dashboard_deliveries (active)
+  assert.equal(REPORT_REGISTRY_SEED.length, 57) // INB-173: +4 (coupon_driven + 3 snapshots)
   const keys = new Set(REPORT_REGISTRY_SEED.map(r => r.report_key))
-  assert.equal(keys.size, 53, 'report_keys are unique')
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 51)
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => !r.is_active).length, 2)
+  assert.equal(keys.size, 57, 'report_keys are unique')
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.is_active).length, 54) // 51 +4 new −1 coupon_sales deprecated
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => !r.is_active).length, 3) // 2 planned + coupon_sales (INB-173, retired)
   const GROUPS = new Set(['Sponsored Ads', 'Brand Analytics', 'Business Reports', 'Subscribe & Save', 'Virtual Bundles', 'SmartScout', 'ScaleInsights', 'Customer Voice'])
   const CADENCES = new Set(['weekly', 'monthly', 'snapshot_weekly', 'ad_hoc'])
   for (const r of REPORT_REGISTRY_SEED) {
@@ -61,11 +61,11 @@ test('seed: 53 rows, unique keys, valid enums, 51 active / 2 planned', async () 
   }
 })
 
-test('seed: requires_period_dates on exactly 16 rows', async () => {
+test('seed: requires_period_dates on exactly 19 rows', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
-  // 11 + the 3 S&S Dashboard snapshot reports (INB-144) + cogs (INB-162)
-  // + sns_dashboard_deliveries (INB-164 — a 4th point-in-time snapshot; capture date on the form).
-  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.requires_period_dates).length, 16)
+  // 16 (INB-164 baseline) + the 3 new INB-173 point-in-time snapshots (customer_ltv, customer_share,
+  // total_deliveries). The new coupon_driven daily is requires_period_dates=false (matches its siblings).
+  assert.equal(REPORT_REGISTRY_SEED.filter(r => r.requires_period_dates).length, 19)
 })
 
 test('seed: every active target_table exists and every discriminator column is real', async () => {

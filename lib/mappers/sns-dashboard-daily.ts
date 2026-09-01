@@ -71,6 +71,22 @@ export const SNS_DAILY_REPORTS: SnsDailyReport[] = [
       'Last Year Share of Coupon Subscriptions  (CUSTOM)': 'coupon_subs_share_ly', // DOUBLED space before (CUSTOM)
     },
   },
+  {
+    // INB-173 — Coupon Driven Sales (replaces the deprecated Coupon Sales Share). Coupon-driven sales
+    // dollars by coupon type. Exact-header signature "Subscribe & Save Coupon (SUM)" — byte-distinct
+    // from the Sales file's "Subscribe & Save (CUSTOM)" and the Share file's doubled-space variant, so
+    // no collision under exact-header matching. Reorder Coupon + Standard Coupon are 0 on every row
+    // (confirmed across the 08-17/08-25/08-31 pulls) but the mapper emits a row for EVERY mapped column
+    // regardless of value (see mapSnsDashboardDaily), so all three metrics get a row per date — the
+    // INB-168 paired-discriminator coverage needs all three present or it intersects to a NULL cap date.
+    reportKey: 'sns_dashboard_coupon_driven',
+    signature: 'Subscribe & Save Coupon (SUM)',
+    columns: {
+      'Subscribe & Save Coupon (SUM)': 'coupon_sales_sns',
+      'Reorder Coupon (SUM)': 'coupon_sales_reorder',   // 0 on every row to date — still stored
+      'Standard Coupon (SUM)': 'coupon_sales_standard', // 0 on every row to date — still stored
+    },
+  },
 ]
 
 const DATE_COL = 'calc_date_granularity'

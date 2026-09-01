@@ -51,12 +51,12 @@ test('unmappedSnsDailyColumns: an unknown metric column is returned by its origi
   )
 })
 
-test('SNS_DAILY_REPORTS: 5 reports, unique signatures, every slug reachable', () => {
-  assert.equal(SNS_DAILY_REPORTS.length, 5)
+test('SNS_DAILY_REPORTS: 6 reports, unique signatures, every slug reachable', () => {
+  assert.equal(SNS_DAILY_REPORTS.length, 6) // INB-173: +sns_dashboard_coupon_driven
   const sigs = SNS_DAILY_REPORTS.map(r => r.signature)
-  assert.equal(new Set(sigs).size, 5, 'signatures are unique')
+  assert.equal(new Set(sigs).size, 6, 'signatures are unique')
   const keys = SNS_DAILY_REPORTS.map(r => r.reportKey)
-  assert.equal(new Set(keys).size, 5, 'report_keys are unique')
+  assert.equal(new Set(keys).size, 6, 'report_keys are unique')
   // Every report's signature is one of its own columns (so an identified file always maps ≥1 col).
   for (const r of SNS_DAILY_REPORTS) assert.ok(r.signature in r.columns, `${r.reportKey} signature is a column`)
 })
@@ -90,11 +90,37 @@ test('INB-167: the real Sales export still maps to reorder_sales + sns_sales →
   assert.deepEqual(metrics, ['reorder_sales', 'sns_sales'])
 })
 
-test('INB-167: all 5 real export fixtures identify to distinct reports; no unmapped columns', () => {
-  const got = ['sns-daily-sales.csv', 'sns-daily-share.csv', 'sns-daily-subcount.csv', 'sns-daily-coupon-sales.csv', 'sns-daily-coupon-subs.csv']
+test('INB-167/173: all 6 real export fixtures identify to distinct reports; no unmapped columns', () => {
+  const got = ['sns-daily-sales.csv', 'sns-daily-share.csv', 'sns-daily-subcount.csv', 'sns-daily-coupon-sales.csv', 'sns-daily-coupon-subs.csv', 'sns-daily-coupon-driven.csv']
     .map(f => { const p = fixture(f); return { key: identifySnsDailyReport(p.headers)?.reportKey, unmapped: unmappedSnsDailyColumns(p.headers) } })
-  assert.deepEqual(got.map(g => g.key).sort(), ['sns_dashboard_coupon_sales', 'sns_dashboard_coupon_subs', 'sns_dashboard_reorder_share', 'sns_dashboard_sales', 'sns_dashboard_subscription_count'])
+  assert.deepEqual(got.map(g => g.key).sort(), ['sns_dashboard_coupon_driven', 'sns_dashboard_coupon_sales', 'sns_dashboard_coupon_subs', 'sns_dashboard_reorder_share', 'sns_dashboard_sales', 'sns_dashboard_subscription_count'])
   for (const g of got) assert.deepEqual(g.unmapped, [], `${g.key} has no unmapped columns`)
+})
+
+// ── INB-173: Coupon Driven Sales — the ZERO-STORAGE requirement ────────────────────
+// Reorder + Standard are 0 on every row. The mapper MUST still emit their rows: sns_dashboard_daily is
+// pairedDiscriminator (INB-168), so a missing metric → no rows → the coverage intersection caps at NULL
+// → the whole report reports zero coverage. All three metrics must get a row per date.
+test('INB-173 zero-storage: all 3 coupon-driven metrics get a row per date, INCLUDING the all-zero ones', () => {
+  const row = { 'calc_date_granularity': '2026-08-28 00:00:00', 'Subscribe & Save Coupon (SUM)': '14567.89', 'Reorder Coupon (SUM)': '0', 'Standard Coupon (SUM)': '0' }
+  const out = mapSnsDashboardDaily(row, BRAND)
+  assert.deepEqual(out, [
+    { brand_id: BRAND, metric_date: '2026-08-28', metric: 'coupon_sales_sns', value: 14567.89 },
+    { brand_id: BRAND, metric_date: '2026-08-28', metric: 'coupon_sales_reorder', value: 0 },   // stored, not skipped
+    { brand_id: BRAND, metric_date: '2026-08-28', metric: 'coupon_sales_standard', value: 0 },   // stored, not skipped
+  ])
+})
+
+test('INB-173 zero-storage (real fixture): every date yields all 3 coupon-driven metrics; report_key resolves', () => {
+  const p = fixture('sns-daily-coupon-driven.csv')
+  assert.equal(identifySnsDailyReport(p.headers)?.reportKey, 'sns_dashboard_coupon_driven')
+  const mapped = p.rows.flatMap(r => mapSnsDashboardDaily(r, BRAND))
+  // 3 dates × 3 metrics = 9 rows; each date carries all three metric slugs.
+  assert.equal(mapped.length, 9)
+  const byDate = new Map<string, Set<string>>()
+  for (const r of mapped) { const d = r.metric_date as string; (byDate.get(d) ?? byDate.set(d, new Set()).get(d)!).add(r.metric as string) }
+  for (const [d, metrics] of byDate) assert.deepEqual([...metrics].sort(), ['coupon_sales_reorder', 'coupon_sales_sns', 'coupon_sales_standard'], `date ${d} has all 3`)
+  assert.equal(deriveReportKey('sns_dashboard_daily', p.headers, mapped as Record<string, unknown>[]).reportKey, 'sns_dashboard_coupon_driven')
 })
 
 test('INB-167 per-report scoping: "Subscribe & Save (CUSTOM)" means sns_sales under Sales, sns_sales_share under Share', () => {
@@ -213,4 +239,55 @@ test('INB-172: the real LTV fixture is byte-identical after the dim2 trim (clean
   assert.equal(out.length, 8)
   assert.ok(out.every(r => r.report === 'subscriber_ltv'))
   assert.deepEqual([...new Set(out.map(r => r.dim2))].sort(), ['One-time Purchases', 'Subscribe & Save'])
+})
+
+// ── INB-173: the two "Segments" snapshots — THE anti-collision test (most important single test) ────
+// Both files start with column "Segments"; they are separated ONLY by their distinct value column.
+// If the mapper keyed on "Segments", one report's values would land in the other's slot (INB-167 class).
+test('INB-173 anti-collision: the two "Segments" fixtures map to DIFFERENT report values, not the same slot', () => {
+  const ltv = mapSnap('sns-snap-customer-ltv.csv')
+  const share = mapSnap('sns-snap-customer-share.csv')
+  assert.ok(ltv.length > 0 && share.length > 0, 'both produce rows')
+  assert.ok(ltv.every(r => r.report === 'customer_ltv_by_segment'), 'Average GMS file → customer_ltv_by_segment')
+  assert.ok(share.every(r => r.report === 'customer_share_by_segment'), 'Customer Percentage file → customer_share_by_segment')
+  // The reports must be disjoint — neither swallowed the other.
+  assert.notEqual(ltv[0].report, share[0].report)
+})
+
+test('INB-173 Customer LTV: 3 segments, verbatim dim1, dim2="", dollar values', () => {
+  const out = mapSnap('sns-snap-customer-ltv.csv')
+  assert.equal(out.length, 3)
+  assert.ok(out.every(r => r.report === 'customer_ltv_by_segment' && r.dim2 === ''), 'report + dim2="" on all')
+  assert.deepEqual(out.map(r => r.dim1), ['One Time Customer', 'Reorder Customer', 'Subscriber'])
+  assert.deepEqual(out.map(r => r.value), [45.67, 123.45, 234.56])
+})
+
+test('INB-173 Customer Share: 3 segments, dim2="", fractions summing to ~1.0', () => {
+  const out = mapSnap('sns-snap-customer-share.csv')
+  assert.equal(out.length, 3)
+  assert.ok(out.every(r => r.report === 'customer_share_by_segment' && r.dim2 === ''))
+  const total = out.reduce((s, r) => s + Number(r.value), 0)
+  assert.ok(Math.abs(total - 1.0) < 1e-9, `customer share sums to ~1.0 (got ${total})`)
+})
+
+test('INB-173 Total deliveries: "new_segement" typo header routes correctly, 5 buckets, dim2="", verbatim', () => {
+  const out = mapSnap('sns-snap-total-deliveries.csv')
+  assert.equal(out.length, 5)
+  assert.ok(out.every(r => r.report === 'total_deliveries_breakdown' && r.dim2 === ''))
+  assert.deepEqual(out.map(r => r.dim1), ['1 delivery', '2 deliveries', '3 deliveries', '4 deliveries', '5+ deliveries'])
+  assert.ok(out.every(r => typeof r.value === 'number' && (r.value as number) > 0))
+})
+
+test('INB-173 idempotency: each new snapshot fixture mapped twice → same row count on the uq key (dim2="")', () => {
+  for (const [file, n] of [['sns-snap-customer-ltv.csv', 3], ['sns-snap-customer-share.csv', 3], ['sns-snap-total-deliveries.csv', 5]] as const) {
+    const keys = new Set([...mapSnap(file), ...mapSnap(file)].map(uqKey))
+    assert.equal(keys.size, n, `${file} → ${n} uq keys, not ${2 * n}`)
+  }
+})
+
+test('INB-173 open bucket: an unseen customer segment / delivery bucket is stored verbatim, not dropped', () => {
+  const seg = mapSnsDashboardSnapshots({ 'Segments': 'Lapsed Customer', 'Average GMS': '9.99' }, BRAND, { date_range_start: '2026-08-28' })
+  assert.deepEqual(seg, [{ brand_id: BRAND, snapshot_date: '2026-08-28', report: 'customer_ltv_by_segment', dim1: 'Lapsed Customer', dim2: '', value: 9.99 }])
+  const del = mapSnsDashboardSnapshots({ 'new_segement': '6+ deliveries', 'shipped_revenue (SUM)': '42.42' }, BRAND, { date_range_start: '2026-08-28' })
+  assert.deepEqual(del, [{ brand_id: BRAND, snapshot_date: '2026-08-28', report: 'total_deliveries_breakdown', dim1: '6+ deliveries', dim2: '', value: 42.42 }])
 })

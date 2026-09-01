@@ -292,6 +292,35 @@ const SIGNATURES: Array<{
     tableName: 'sns_dashboard_snapshots',
     match: h => has(h, 'subs_state_delivery_segment') && has(h, 'shipped_revenue'),
   },
+  // INB-173 — three new S&S snapshots. The two "Segments" files (Customer LTV / Customer Share by
+  // segment) share their FIRST column "Segments", so — unlike every existing snapshot, which is keyed
+  // on its distinctive first column — they MUST be separated on the FULL header set (their distinct
+  // value column: average_gms vs customer_percentage). Matching on "segments" alone would let whichever
+  // is checked first swallow both (the INB-167 failure mode). Note "segments" (plural) is NOT a
+  // substring of "subs_state_delivery_segment", and neither Segments file carries the other's value
+  // column, so the two signatures are mutually exclusive and can't cross-match the deliveries reports.
+  {
+    // Customer Lifetime Value by Segment (snapshot). Headers: Segments + Average GMS.
+    reportType: 'sns_dashboard_snapshots',
+    tableName: 'sns_dashboard_snapshots',
+    match: h => has(h, 'segments') && has(h, 'average_gms'),
+  },
+  {
+    // Customer Share by Segment (snapshot). Headers: Segments + Customer Percentage (CUSTOM).
+    reportType: 'sns_dashboard_snapshots',
+    tableName: 'sns_dashboard_snapshots',
+    match: h => has(h, 'segments') && has(h, 'customer_percentage'),
+  },
+  {
+    // Total Sales by Number of Deliveries (snapshot) — all sales, 5 buckets. The signature column
+    // "new_segement" is Amazon's MISSPELLING (missing the second n in "segment") — matched verbatim;
+    // if Amazon corrects it the exact match fails loudly (correct behavior). Distinct from INB-164's
+    // subs_state_delivery_segment; "segments" is not a substring of "new_segement" (contains the
+    // misspelling "segement"), so it can't cross-match the two Segments signatures above.
+    reportType: 'sns_dashboard_snapshots',
+    tableName: 'sns_dashboard_snapshots',
+    match: h => has(h, 'new_segement') && has(h, 'shipped_revenue'),
+  },
   {
     // Confirmed Amazon S&S headers normalise as:
     //   "SnS shipped units"              → "sn_s_shipped_units" ... actually:

@@ -23,6 +23,13 @@ const cases: Array<[string, string[], string]> = [
   ['Subscriber Retention', ['calc_metric_name', 'calc_retention (CUSTOM)'], SNAP],
   // INB-164 — Sales by Number of Deliveries (subs_state_delivery_segment is unique to this export)
   ['Deliveries breakdown', ['subs_state_delivery_segment', 'shipped_revenue (SUM)'], SNAP],
+  // INB-173 — Coupon Driven Sales (daily; the greedy calc_date_granularity signature claims it)
+  ['Coupon Driven Sales', ['calc_date_granularity', 'Subscribe & Save Coupon (SUM)', 'Reorder Coupon (SUM)', 'Standard Coupon (SUM)'], DAILY],
+  // INB-173 — the two "Segments" snapshots (split on their distinct value column, not "Segments")
+  ['Customer LTV by segment', ['Segments', 'Average GMS'], SNAP],
+  ['Customer Share by segment', ['Segments', 'Customer Percentage (CUSTOM)'], SNAP],
+  // INB-173 — Total deliveries; 'new_segement' is Amazon's misspelling, matched verbatim
+  ['Total deliveries breakdown', ['new_segement', 'shipped_revenue (SUM)'], SNAP],
 ]
 
 for (const [label, headers, table] of cases) {
@@ -44,4 +51,18 @@ test('collision guard: Subscription Count (has "Active Subscriptions") is a dail
 test('no regression: a real S&S Performance header set (active_subscriptions, no calc_date_granularity) still → subscribe_and_save', () => {
   const det = detectReportType(['ASIN', 'SKU', 'Active Subscriptions', 'Total Subscriptions'])
   assert.equal(det.reportType, 'subscribe_and_save')
+})
+
+// INB-173 anti-collision (detector level): the two "Segments" files share col 1 but must NOT match on
+// "segments" alone — each is claimed by its distinct value column, and neither cross-matches the
+// deliveries reports. (The report-VALUE split is asserted in the mapper test; here we prove routing.)
+test('anti-collision: Customer LTV (Segments+Average GMS) does NOT satisfy the Customer Share signature', () => {
+  // Customer Share needs customer_percentage; the LTV file lacks it → only the LTV signature can match.
+  assert.equal(detectReportType(['Segments', 'Average GMS']).tableName, 'sns_dashboard_snapshots')
+})
+test('anti-collision: new_segement (typo) is distinct from subs_state_delivery_segment and from "segments"', () => {
+  // The all-sales deliveries file must not be swallowed by INB-164's deliveries signature nor by either
+  // Segments signature — "segments" is not a substring of "new_segement" (which carries "segement").
+  const det = detectReportType(['new_segement', 'shipped_revenue (SUM)'])
+  assert.equal(det.reportType, 'sns_dashboard_snapshots')
 })

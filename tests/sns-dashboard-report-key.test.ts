@@ -13,6 +13,8 @@ const dailyCases: Array<[string, string[], string]> = [
   ['sns_dashboard_subscription_count', ['active_subscriptions', 'active_subscriptions_ly'], 'sns_dashboard_subscription_count'],
   ['sns_dashboard_coupon_sales', ['coupon_sales_share', 'coupon_sales_share_ly'], 'sns_dashboard_coupon_sales'],
   ['sns_dashboard_coupon_subs', ['coupon_subs_share', 'coupon_subs_share_ly'], 'sns_dashboard_coupon_subs'],
+  // INB-173 — Coupon Driven Sales: all three metrics (incl. the two all-zero ones) map to the one key.
+  ['sns_dashboard_coupon_driven', ['coupon_sales_sns', 'coupon_sales_reorder', 'coupon_sales_standard'], 'sns_dashboard_coupon_driven'],
 ]
 
 for (const [label, metrics, key] of dailyCases) {
@@ -26,6 +28,10 @@ const snapCases: Array<[string, string]> = [
   ['avg_reorders', 'sns_dashboard_avg_reorders'],
   ['subscriber_retention', 'sns_dashboard_retention'],
   ['deliveries_breakdown', 'sns_dashboard_deliveries'], // INB-164
+  // INB-173 — three new snapshots
+  ['customer_ltv_by_segment', 'sns_dashboard_customer_ltv'],
+  ['customer_share_by_segment', 'sns_dashboard_customer_share'],
+  ['total_deliveries_breakdown', 'sns_dashboard_total_deliveries'],
 ]
 
 for (const [report, key] of snapCases) {

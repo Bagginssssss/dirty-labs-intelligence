@@ -9,6 +9,9 @@ import { makeGetter, norm, parseNumeric } from './types'
 //   avg_reorders          — dim1 = is_subscriber
 //   subscriber_retention  — dim1 = metric name (30 Days / 90 Days)
 //   deliveries_breakdown  — dim1 = delivery-count segment (INB-164; shipped revenue, absolute dollars)
+//   customer_ltv_by_segment    — dim1 = customer segment (INB-173; avg GMS; first col 'Segments')
+//   customer_share_by_segment  — dim1 = customer segment (INB-173; customer % share; first col 'Segments')
+//   total_deliveries_breakdown — dim1 = delivery bucket (INB-173; all-sales shipped revenue; 'new_segement')
 
 // INB-164 — Amazon permanently relabeled the avg_reorders buckets Subscribers/Non-subscribers →
 // Subscriber/Non-subscriber (between the 07-27 and 08-04 snapshots). Canonicalize so a re-upload
@@ -30,6 +33,22 @@ const KNOWN_DELIVERY_SEGMENTS = new Set([
   'Subscriptions with 3 deliveries',
   'Subscriptions with 4 deliveries',
   'Subscriptions with 5+ deliveries',
+])
+
+// INB-173 — open bucket/segment lists for the three new snapshots. Stored VERBATIM, never
+// enum-validated; these sets ONLY drive a non-blocking warning on an unseen label (Amazon widens
+// bucket lists). Customer LTV and Customer Share share the same three customer segments.
+const KNOWN_CUSTOMER_SEGMENTS = new Set([
+  'One Time Customer',
+  'Reorder Customer',
+  'Subscriber',
+])
+const KNOWN_TOTAL_DELIVERY_BUCKETS = new Set([
+  '1 delivery',
+  '2 deliveries',
+  '3 deliveries',
+  '4 deliveries',
+  '5+ deliveries',
 ])
 
 // INB-174 — backdated-snapshot guard. Snapshot exports have NO date column; the export returns
@@ -90,6 +109,31 @@ export function mapSnsDashboardSnapshots(row: RawRow, brandId: string, context?:
     value = parseNumeric(get('', 'shipped_revenue (SUM)', 'shipped_revenue'))
     if (dim1 && !KNOWN_DELIVERY_SEGMENTS.has(dim1)) {
       console.warn(`[sns deliveries] unseen delivery segment '${dim1}' — stored verbatim (open bucket list)`)
+    }
+  // INB-173 — the two "Segments" files share col 1 'Segments'; they are split on their DISTINCT value
+  // column (average_gms vs customer_percentage), never on 'segments' alone (which would let one swallow
+  // the other — the INB-167 collision). dim1 = the segment label VERBATIM; dim2 stays '' (uq needs it).
+  } else if (present('average_gms')) {
+    report = 'customer_ltv_by_segment'
+    dim1 = get('', 'Segments').trim()
+    value = parseNumeric(get('', 'Average GMS', 'average_gms'))
+    if (dim1 && !KNOWN_CUSTOMER_SEGMENTS.has(dim1)) {
+      console.warn(`[sns customer_ltv] unseen customer segment '${dim1}' — stored verbatim (open segment list)`)
+    }
+  } else if (present('customer_percentage_custom') || present('customer_percentage')) {
+    report = 'customer_share_by_segment'
+    dim1 = get('', 'Segments').trim()
+    value = parseNumeric(get('', 'Customer Percentage (CUSTOM)', 'customer_percentage'))
+    if (dim1 && !KNOWN_CUSTOMER_SEGMENTS.has(dim1)) {
+      console.warn(`[sns customer_share] unseen customer segment '${dim1}' — stored verbatim (open segment list)`)
+    }
+  } else if (present('new_segement')) {
+    // 'new_segement' is Amazon's MISSPELLING (missing the 2nd n) — read verbatim; DO NOT "correct" it.
+    report = 'total_deliveries_breakdown'
+    dim1 = get('', 'new_segement').trim()
+    value = parseNumeric(get('', 'shipped_revenue (SUM)', 'shipped_revenue'))
+    if (dim1 && !KNOWN_TOTAL_DELIVERY_BUCKETS.has(dim1)) {
+      console.warn(`[sns total_deliveries] unseen delivery bucket '${dim1}' — stored verbatim (open bucket list)`)
     }
   } else {
     return [] // unrecognized snapshot shape (detector shouldn't route here)
