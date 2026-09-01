@@ -91,12 +91,14 @@ test('fbaReturnsWarnings: unknown reason codes warned (sorted, de-duped); clean 
   assert.deepEqual(fbaReturnsWarnings([row({ 'reason': 'DEFECTIVE' })]), [])
 })
 
-// ── reason-map mirror (⇔ 22-code migration seed) ──────────────────────────────────
-test('RETURN_REASON_BUCKETS: 22 codes with the sign-off bucket counts', () => {
+// ── reason-map mirror (⇔ 23-code migration seed: 052 + INB-177's RECALL) ───────────
+test('RETURN_REASON_BUCKETS: 23 codes with the sign-off bucket counts', () => {
   const codes = Object.keys(RETURN_REASON_BUCKETS)
-  assert.equal(codes.length, 22)
+  assert.equal(codes.length, 23) // INB-177: +RECALL
   const counts = codes.reduce<Record<string, number>>((a, c) => { a[RETURN_REASON_BUCKETS[c]] = (a[RETURN_REASON_BUCKETS[c]] ?? 0) + 1; return a }, {})
-  assert.deepEqual(counts, { product_fault: 4, logistics_fault: 5, customer_choice: 11, fraud: 2 })
+  assert.deepEqual(counts, { product_fault: 5, logistics_fault: 5, customer_choice: 11, fraud: 2 }) // product_fault 4→5
+  // INB-177 — a product recall buckets as product_fault (operator-confirmed).
+  assert.equal(faultClassFor('RECALL'), 'product_fault')
   // the four codes Darren ruled on explicitly
   assert.equal(faultClassFor('SWITCHEROO'), 'fraud')
   assert.equal(faultClassFor('UNDELIVERABLE_REFUSED'), 'customer_choice')

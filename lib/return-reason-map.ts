@@ -15,6 +15,8 @@ export const RETURN_REASON_BUCKETS: Record<string, FaultClass> = {
   NOT_AS_DESCRIBED:          'product_fault',
   QUALITY_UNACCEPTABLE:      'product_fault',
   MISSING_PARTS:             'product_fault',
+  RECALL:                    'product_fault', // INB-177 — a product recall is a defect/safety issue
+
   DAMAGED_BY_FC:             'logistics_fault',
   DAMAGED_BY_CARRIER:        'logistics_fault',
   MISSED_ESTIMATED_DELIVERY: 'logistics_fault',
