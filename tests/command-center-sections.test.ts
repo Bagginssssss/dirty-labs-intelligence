@@ -34,6 +34,20 @@ test('sections ordered by workflow, tiles by sort_order, per-section progress', 
   assert.ok(vm.sections.every(s => s.tiles.every(t => t.status !== 'planned')))
 })
 
+// INB-175 — a retired tile lands in its OWN bucket: out of sections, out of planned, out of the header.
+test('retired split: retired tiles are bucketed separately from planned and excluded from active/header', () => {
+  const tiles: TileVM[] = [
+    tile({ reportKey: 'sqp_weekly', sourceGroup: 'Brand Analytics', status: 'current', sortOrder: 1 }),
+    tile({ reportKey: 'planned_x', sourceGroup: 'Brand Analytics', status: 'planned' }),
+    tile({ reportKey: 'coupon_sales', sourceGroup: 'Subscribe & Save', status: 'retired', retiredAt: '2026-08-17' }),
+  ]
+  const vm = assembleCommandCenter(tiles, '2026-07-10')
+  assert.deepEqual(vm.retired.map(t => t.reportKey), ['coupon_sales'])
+  assert.deepEqual(vm.planned.map(t => t.reportKey), ['planned_x'], 'retired is NOT lumped into planned')
+  assert.ok(vm.sections.every(s => s.tiles.every(t => t.status !== 'retired')), 'retired is out of the active sections')
+  assert.equal(vm.header.total, 1, 'header counts only the 1 active tile (retired + planned excluded)')
+})
+
 test('header totals across active tiles only', () => {
   const tiles: TileVM[] = [
     tile({ reportKey: 'a', sourceGroup: 'Sponsored Ads', status: 'current' }),

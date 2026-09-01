@@ -25,16 +25,18 @@ export function CommandCenter({ data }: { data: CommandCenterVM }) {
   const counts = useMemo<Record<FilterKey, number>>(() => {
     const active = data.sections.flatMap(s => s.tiles)
     return {
-      all: active.length + data.planned.length,
+      all: active.length + data.planned.length + data.retired.length,
       due: active.filter(t => t.status === 'due').length,
       overdue: active.filter(t => t.status === 'overdue').length,
       ad_hoc: active.filter(t => t.status === 'ad_hoc').length,
       planned: data.planned.length,
+      retired: data.retired.length, // INB-175
     }
   }, [data])
 
   const match = (t: TileVM) => filter === 'all' || t.status === filter
   const showPlanned = filter === 'all' || filter === 'planned'
+  const showRetired = filter === 'all' || filter === 'retired' // INB-175
 
   return (
     <div>
@@ -82,6 +84,20 @@ export function CommandCenter({ data }: { data: CommandCenterVM }) {
           </div>
           <div className={GRID}>
             {data.planned.map(t => (
+              <ReportTile key={t.reportKey} tile={t} onClick={() => setOpenTile(t)} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* INB-175 — RETIRED: reports removed by the source. Distinct from PLANNED (not-yet-built). */}
+      {showRetired && data.retired.length > 0 && (
+        <section className="mb-5">
+          <div className="border-b border-[#1e1e2e] pb-1.5 mb-2.5">
+            <span className="text-[10px] tracking-[0.12em] text-[#7f1d1d]">RETIRED</span>
+          </div>
+          <div className={GRID}>
+            {data.retired.map(t => (
               <ReportTile key={t.reportKey} tile={t} onClick={() => setOpenTile(t)} />
             ))}
           </div>

@@ -7,11 +7,12 @@ import { StatusBadge } from './StatusBadge'
 
 export function ReportTile({ tile, onClick }: { tile: TileVM; onClick: () => void }) {
   const planned = tile.status === 'planned'
+  const retired = tile.status === 'retired' // INB-175
   const today = new Date().toISOString().slice(0, 10)
   return (
     <button
       onClick={onClick}
-      className={`text-left bg-[#16161a] border border-[#1e1e2e] rounded-[4px] p-[10px] transition-colors hover:border-[#334155] ${planned ? 'opacity-60' : ''}`}
+      className={`text-left bg-[#16161a] border border-[#1e1e2e] rounded-[4px] p-[10px] transition-colors hover:border-[#334155] ${planned || retired ? 'opacity-60' : ''}`}
       style={{ borderLeft: `2px solid ${STATUS_COLORS[tile.status]}` }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -19,7 +20,12 @@ export function ReportTile({ tile, onClick }: { tile: TileVM; onClick: () => voi
         <StatusBadge status={tile.status} />
       </div>
 
-      {planned ? (
+      {retired ? (
+        // INB-175 — removed by the source: show WHEN it was found gone, not a coverage/freshness line.
+        <div className="text-[9px] text-[#94564f] mt-2 leading-relaxed">
+          Removed by the source{tile.retiredAt ? ` — found gone ${tile.retiredAt}` : ''}. History preserved &amp; queryable.
+        </div>
+      ) : planned ? (
         <div className="text-[9px] text-[#475569] mt-2 leading-relaxed">{tile.notes ?? 'Planned'}</div>
       ) : (
         <>

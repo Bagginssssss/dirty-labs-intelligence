@@ -1,6 +1,6 @@
 'use client'
 
-export type FilterKey = 'all' | 'due' | 'overdue' | 'ad_hoc' | 'planned'
+export type FilterKey = 'all' | 'due' | 'overdue' | 'ad_hoc' | 'planned' | 'retired'
 
 const CHIPS: { key: FilterKey; label: string; color: string }[] = [
   { key: 'all', label: 'ALL', color: '#94a3b8' },
@@ -8,6 +8,7 @@ const CHIPS: { key: FilterKey; label: string; color: string }[] = [
   { key: 'overdue', label: 'OVERDUE', color: '#ef4444' },
   { key: 'ad_hoc', label: 'AD-HOC', color: '#475569' },
   { key: 'planned', label: 'PLANNED', color: '#334155' },
+  { key: 'retired', label: 'RETIRED', color: '#7f1d1d' }, // INB-175
 ]
 
 // Status filter — mirrors components/upload-tracker/FilterBar.tsx pill idiom.

@@ -31,6 +31,16 @@ const week = (periodEnd: string): CoverageEnd => ({ periodEnd, periodType: 'week
 
 const base = { mode: 'weekly' as const, isActive: true, eventDriven: false, lastUploadAt: null as string | null, today: TODAY }
 
+// INB-175 — retired takes precedence: a retired_at date → 'retired', NOT 'planned', and it wins even
+// over an otherwise-current report. A report with no retired_at behaves exactly as before.
+test('retired: retiredAt set → retired (precedence over planned and over coverage-derived status)', () => {
+  assert.equal(deriveStatus({ ...base, isActive: false, cadence: 'weekly', coverageEnds: [], retiredAt: '2026-08-17' }), 'retired')
+  // retired beats a would-be 'current' (guards against ordering the check after the coverage logic)
+  assert.equal(deriveStatus({ ...base, cadence: 'weekly', coverageEnds: weeklyEnds('2026-07-04', 10), retiredAt: '2026-08-17' }), 'retired')
+  // no retired_at → unchanged: inactive is still planned, active still resolves by coverage
+  assert.equal(deriveStatus({ ...base, isActive: false, cadence: 'weekly', coverageEnds: [] }), 'planned')
+})
+
 test('weekly current: expected Saturday covered & fully pulled, no hole', () => {
   assert.equal(deriveStatus({ ...base, cadence: 'weekly', coverageEnds: weeklyEnds('2026-07-04', 10) }), 'current')
 })

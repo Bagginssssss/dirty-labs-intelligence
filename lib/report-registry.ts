@@ -33,6 +33,10 @@ export interface RegistryRow {
   is_active: boolean
   sort_order: number | null
   notes: string | null
+  // INB-175 — explicit RETIRED marker: the date the report was first observed unavailable from the
+  // source (NOT the last-data date). NULL/absent = not retired. Optional in the seed so the 56
+  // not-retired rows need not spell out `retired_at: null` (the mirror diff treats absent = null).
+  retired_at?: string | null
 }
 
 // Mirror of migration 040's 37-row seed. Order matches the migration.
@@ -70,7 +74,9 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
   { report_key: 'sns_dashboard_subscription_count', display_name: 'S&S Daily — Subscription Count', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['active_subscriptions', 'active_subscriptions_ly'] }, requires_period_dates: false, is_active: true, sort_order: 4, notes: null },
   // INB-173 — DEPRECATED: "Coupon Sales Share" left the Seller Central dashboard (last data 2026-08-09).
   // is_active=false only — 85 coverage periods + 1,170 fact rows preserved (history stays queryable).
-  { report_key: 'sns_dashboard_coupon_sales', display_name: 'S&S Daily — Coupon Sales Share (RETIRED — Amazon removed 2026-08)', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['coupon_sales_share', 'coupon_sales_share_ly'] }, requires_period_dates: false, is_active: false, sort_order: 5, notes: null },
+  // INB-175 — first RETIRED report: retired_at carries the state (first observed missing 2026-08-17), so
+  // the interim "(RETIRED — …)" display-name label is removed. retired_at ⇒ is_active=false (DB CHECK).
+  { report_key: 'sns_dashboard_coupon_sales', display_name: 'S&S Daily — Coupon Sales Share', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['coupon_sales_share', 'coupon_sales_share_ly'] }, requires_period_dates: false, is_active: false, sort_order: 5, notes: null, retired_at: '2026-08-17' },
   { report_key: 'sns_dashboard_coupon_subs', display_name: 'S&S Daily — Coupon Subs Share', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['coupon_subs_share', 'coupon_subs_share_ly'] }, requires_period_dates: false, is_active: true, sort_order: 6, notes: null },
   { report_key: 'sns_dashboard_ltv', display_name: 'S&S Snapshot — Subscriber LTV (Established / Growing / Lost)', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['subscriber_ltv'] }, requires_period_dates: true, is_active: true, sort_order: 7, notes: 'Trailing 24-month avg GMS by segment x purchase type; values as-of capture date. No backfill — history starts at first capture.' },
   { report_key: 'sns_dashboard_avg_reorders', display_name: 'S&S Snapshot — Avg Reorders (Sub vs Non)', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Point-in-time', target_table: 'sns_dashboard_snapshots', discriminator: { column: 'report', values: ['avg_reorders'] }, requires_period_dates: true, is_active: true, sort_order: 8, notes: 'Trailing 12 months; values as-of capture date. No backfill — history starts at first capture.' },

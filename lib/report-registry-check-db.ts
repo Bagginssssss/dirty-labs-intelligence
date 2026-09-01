@@ -17,7 +17,7 @@ export interface RegistryMirrorResult {
 
 const COLUMNS =
   'report_key, display_name, source_group, cadence, pull_period, target_table, ' +
-  'discriminator, requires_period_dates, is_active, sort_order, notes'
+  'discriminator, requires_period_dates, is_active, sort_order, notes, retired_at' // INB-175
 
 export async function checkRegistryMirrorLive(): Promise<RegistryMirrorResult> {
   try {

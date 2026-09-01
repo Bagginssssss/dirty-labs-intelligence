@@ -1,6 +1,7 @@
 // INB-147 — view-model types for the Report Command Center.
 
-export type TileStatus = 'current' | 'due' | 'overdue' | 'ad_hoc' | 'planned'
+// INB-175 — 'retired' (removed by the source) is distinct from 'planned' (not yet built).
+export type TileStatus = 'current' | 'due' | 'overdue' | 'ad_hoc' | 'planned' | 'retired'
 
 export type StripCellState = 'filled' | 'gap' | 'neutral' | 'pending'
 export type StripCell = { periodEnd: string; label: string; state: StripCellState }
@@ -32,6 +33,7 @@ export type TileVM = {
   periodLine: string // rendered freshness/window line for the tile face (INB-147 QC2)
   lastUploadAt: string | null // ISO timestamp of latest tagged ingestion-log event, else null
   strip: StripCell[]
+  retiredAt: string | null // INB-175 — date first observed unavailable from the source; null unless retired
 }
 
 export type SectionVM = {
@@ -44,6 +46,7 @@ export type SectionVM = {
 export type CommandCenterVM = {
   sections: SectionVM[]
   planned: TileVM[]
+  retired: TileVM[] // INB-175 — reports removed by the source; rendered distinctly from planned
   header: { current: number; due: number; overdue: number; total: number; weekLabel: string }
 }
 

@@ -17,12 +17,15 @@ export interface RegistryDiff {
 const FIELDS: (keyof RegistryRow)[] = [
   'display_name', 'source_group', 'cadence', 'pull_period', 'target_table',
   'discriminator', 'requires_period_dates', 'is_active', 'sort_order', 'notes',
+  'retired_at', // INB-175 — absent in the seed (undefined) equals DB NULL; canonical() coalesces them.
 ]
 
 // Canonical JSON with object keys sorted, so discriminator jsonb compares
-// independent of key order (PostgREST may return a different key order).
+// independent of key order (PostgREST may return a different key order). INB-175: null and undefined
+// canonicalize identically ('null') so an optional seed field left absent matches a DB NULL column.
 function canonical(v: unknown): string {
-  if (v === null || typeof v !== 'object') return JSON.stringify(v)
+  if (v == null) return 'null'
+  if (typeof v !== 'object') return JSON.stringify(v)
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
   const obj = v as Record<string, unknown>
   return `{${Object.keys(obj).sort().map(k => `${JSON.stringify(k)}:${canonical(obj[k])}`).join(',')}}`

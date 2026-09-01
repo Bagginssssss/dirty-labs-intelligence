@@ -68,6 +68,21 @@ test('seed: requires_period_dates on exactly 19 rows', async () => {
   assert.equal(REPORT_REGISTRY_SEED.filter(r => r.requires_period_dates).length, 19)
 })
 
+// INB-175 — the explicit RETIRED marker. Exactly one retired report (coupon_sales), with the interim
+// "(RETIRED — …)" label removed from its display_name (the state now carries it). retired_at ⇒ inactive.
+test('seed: retired_at marks exactly sns_dashboard_coupon_sales; label removed; retired ⇒ inactive', async () => {
+  const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
+  const retired = REPORT_REGISTRY_SEED.filter(r => r.retired_at != null)
+  assert.deepEqual(retired.map(r => r.report_key), ['sns_dashboard_coupon_sales'])
+  assert.equal(retired[0].retired_at, '2026-08-17') // first observed missing, NOT the last-data date
+  assert.equal(retired[0].display_name, 'S&S Daily — Coupon Sales Share') // interim (RETIRED — …) label gone
+  assert.ok(retired.every(r => r.is_active === false), 'retired ⇒ is_active=false (mirrors the DB CHECK)')
+  // the two genuinely-planned reports must NOT be marked retired
+  for (const k of ['ba_top_search_terms', 'amc_query_results']) {
+    assert.equal(REPORT_REGISTRY_SEED.find(r => r.report_key === k)?.retired_at ?? null, null, `${k} is planned, not retired`)
+  }
+})
+
 test('seed: every active target_table exists and every discriminator column is real', async () => {
   const { REPORT_REGISTRY_SEED } = await import('../lib/report-registry.ts')
   for (const r of REPORT_REGISTRY_SEED) {

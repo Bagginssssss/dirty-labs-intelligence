@@ -17,6 +17,7 @@ export const STATUS_COLORS: Record<TileStatus, string> = {
   overdue: '#ef4444',
   ad_hoc: '#475569',
   planned: '#334155',
+  retired: '#7f1d1d', // INB-175 — muted red: removed by the source (distinct from planned slate)
 }
 export const STATUS_LABELS: Record<TileStatus, string> = {
   current: 'CURRENT',
@@ -24,6 +25,7 @@ export const STATUS_LABELS: Record<TileStatus, string> = {
   overdue: 'OVERDUE',
   ad_hoc: 'AD-HOC',
   planned: 'PLANNED',
+  retired: 'RETIRED', // INB-175
 }
 
 // Tunable thresholds (one place — reviewed/tuned during QC). Days measured from the
@@ -121,7 +123,11 @@ export function deriveStatus(p: {
   // whose period_end is the prior reporting month. A current-month pull → current; the tile only
   // goes due once a new month begins without a pull. Scoped via COVERAGE_CONFIG.monthlyPullDate.
   monthlyPullDate?: boolean
+  // INB-175 — date the report was first observed unavailable from the source. Set ⇒ RETIRED (removed),
+  // which the DB CHECK guarantees implies is_active=false, so this is checked BEFORE the planned branch.
+  retiredAt?: string | null
 }): TileStatus {
+  if (p.retiredAt) return 'retired'
   if (!p.isActive) return 'planned'
   if (p.cadence === 'ad_hoc') return 'ad_hoc'
 
@@ -330,7 +336,8 @@ function sectionRank(g: string): number {
 
 export function assembleCommandCenter(tiles: TileVM[], today: string): CommandCenterVM {
   const planned = tiles.filter(t => t.status === 'planned')
-  const active = tiles.filter(t => t.status !== 'planned')
+  const retired = tiles.filter(t => t.status === 'retired') // INB-175 — its own bucket, out of active
+  const active = tiles.filter(t => t.status !== 'planned' && t.status !== 'retired')
 
   const byGroup = new Map<string, TileVM[]>()
   for (const t of active) {
@@ -349,6 +356,7 @@ export function assembleCommandCenter(tiles: TileVM[], today: string): CommandCe
   return {
     sections,
     planned,
+    retired,
     header: {
       current: active.filter(t => t.status === 'current').length,
       due: active.filter(t => t.status === 'due').length,

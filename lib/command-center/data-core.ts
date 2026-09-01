@@ -26,6 +26,7 @@ type RegistryRowDb = {
   is_active: boolean
   sort_order: number | null
   notes: string | null
+  retired_at: string | null // INB-175
 }
 type CoverageRowDb = { report_key: string; period_start: string; period_end: string; period_label: string; period_type: 'weekly' | 'monthly' | 'snapshot'; data_through: string | null }
 
@@ -36,7 +37,7 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
     // report_key is the PK → a unique tiebreaker under the (non-unique) display order.
     fetchAll<RegistryRowDb>(() => supabaseAdmin
       .from('report_registry')
-      .select('report_key,display_name,source_group,cadence,pull_period,target_table,is_active,sort_order,notes')
+      .select('report_key,display_name,source_group,cadence,pull_period,target_table,is_active,sort_order,notes,retired_at')
       .order('source_group').order('sort_order').order('report_key')),
     // (report_key, period_start) is the table's UNIQUE key → a stable total order.
     fetchAll<CoverageRowDb>(() => supabaseAdmin
@@ -81,6 +82,7 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
 
     const status = deriveStatus({
       mode, cadence: r.cadence, isActive: r.is_active, eventDriven, coverageEnds, lastUploadAt, today, weekAnchoredAtStart, monthlyPullDate,
+      retiredAt: r.retired_at, // INB-175
     })
 
     return {
@@ -92,6 +94,7 @@ export async function loadCommandCenterUncached(brandId: string, today: string):
       targetTable: r.target_table,
       sortOrder: r.sort_order ?? 0,
       isActive: r.is_active,
+      retiredAt: r.retired_at, // INB-175
       eventDriven,
       notes: r.notes,
       status,
