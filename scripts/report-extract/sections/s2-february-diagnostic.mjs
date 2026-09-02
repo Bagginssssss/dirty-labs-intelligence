@@ -29,15 +29,11 @@ export default {
         order: [{ column: 'report_date' }],
       },
     )
-    // Zero-order targets baseline — March 2026, the earliest sp_targeting_report month.
-    const tgt = await db.selectAll(
-      'sp_targeting_report',
-      'report_date,ad_type,spend,orders_7d',
-      {
-        filter: q => q.eq('brand_id', BRAND_ID).gte('report_date', '2026-03-01').lte('report_date', '2026-03-31'),
-        order: [{ column: 'report_date' }],
-      },
-    )
+    // NOTE (INB-182, Batch D G2): the March zero-order-target figure was REMOVED. It was sourced from
+    // sp_targeting_report March, which the per-day reconciliation proved is corrupted before 2026-04-18
+    // (a backfill dumped bulk loads onto 2026-03-01 and 2026-04-01 and under-reported every other pre-04-18
+    // day). The figure ($12,317.03 SP) is therefore invalid and is not computed. §2's February argument is
+    // unaffected — it is sourced from business_report_daily + sp_campaign_performance, both clean.
 
     const monthAd = m => {
       const s = spc.filter(r => ym(r.report_date) === m)
@@ -61,11 +57,6 @@ export default {
     const basesIdentical =
       jan.spendAll === jan.spendSp && jan.salesAll === jan.salesSp &&
       feb.spendAll === feb.spendSp && feb.salesAll === feb.salesSp
-
-    // Zero-order-target spend, March. SP-only is the headline (efficiency convention); all-types is
-    // recorded alongside and labelled so the basis choice is visible, never implicit.
-    const zeroOrderSp = sumBy(tgt.filter(r => r.ad_type === 'SP' && Number(r.orders_7d ?? 0) === 0), 'spend')
-    const zeroOrderAll = sumBy(tgt.filter(r => Number(r.orders_7d ?? 0) === 0), 'spend')
 
     const shape = (m, x) => ({
       month: m,
@@ -93,13 +84,7 @@ export default {
         spend_pct_change: jan.spendSp > 0 ? (feb.spendSp - jan.spendSp) / jan.spendSp : null,
         ad_sales_pct_change: jan.salesSp > 0 ? (feb.salesSp - jan.salesSp) / jan.salesSp : null,
       },
-      zero_order_targets_march_2026: {
-        source: 'sp_targeting_report',
-        basis: 'SP-only',
-        spend: zeroOrderSp, // headline — SP-only per the efficiency convention
-        spend_all_types: zeroOrderAll, // recorded alongside, labelled; NOT the headline (basis: SP-only)
-        note: 'Earliest available (sp_targeting_report starts 2026-03-01), already partway into the fix — frame as "even in March, after the first corrections." sp_targeting_report has SB/SBV from 2026-03-01 (distinct from sp_search_term_report, whose SB/SBV start 2026-05-01).',
-      },
+      // zero_order_targets_march_2026 REMOVED — invalid, sourced from corrupted sp_targeting_report (INB-182).
     }
   },
 }

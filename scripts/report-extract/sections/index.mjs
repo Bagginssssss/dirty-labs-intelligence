@@ -14,8 +14,14 @@ import s4 from './s4-acquisition.mjs'
 import s5 from './s5-retention.mjs'
 import s6 from './s6-category.mjs'
 import s6a from './s6a-toilet.mjs'
+import s7 from './s7-media.mjs'
+import s8 from './s8-search-terms.mjs'
+import s9 from './s9-organic.mjs'
+import s10 from './s10-market-share.mjs'
+import s11 from './s11-pipeline.mjs'
 
 // Batch A: §1 (account monthly) + §0 (account weekly) + §2 (February diagnostic).
 // Batch B: §4 (acquisition) + §5 (retention).
 // Batch C: §6 (category performance) + §6a (toilet).
-export const SECTIONS = [s1, s0, s2, s4, s5, s6, s6a]
+// Batch D: §7 (media mix) + §8 (search terms) + §9 (organic) + §10 (market share) + §11 (pipeline).
+export const SECTIONS = [s1, s0, s2, s4, s5, s6, s6a, s7, s8, s9, s10, s11]
