@@ -66,3 +66,25 @@ export function reconcile(actual, expected, kind) {
   const diff = actual - expected
   return { pass: Math.abs(diff) <= tol, diff, tol }
 }
+
+// ── DELIBERATE EXCEPTION to the sum-then-divide rule (INB-178 Batch B, §4/§5) ──────────────────────
+// sns_dashboard_daily stores reorder_rate / sns_sales_share / coupon_subs_share as daily scalars ALREADY
+// divided by Amazon — no numerator or denominator is available — so a weekly/monthly aggregate can only
+// be an UNWEIGHTED MEAN of daily rates. This is exactly the average-of-daily-ratios the rest of this
+// module exists to prevent; it is used ONLY here, ONLY because the inputs to comply do not exist. NEVER
+// use it where a numerator and denominator ARE available — e.g. sns_sales_share has a true rate,
+// sum(sns_sales)/sum(ordered_revenue), which must be computed alongside for validation. Every JSON
+// figure produced this way carries aggregation: "mean_of_daily_rates".
+export function meanOfDailyRates(values) {
+  const v = values.filter(x => x != null).map(Number)
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
+}
+
+// Shared date helpers — Monday-anchored weeks (matches §0/§1 anchoring) and month/day keys.
+export function mondayOf(dateStr) {
+  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)) // Mon=0 … Sun=6
+  return d.toISOString().slice(0, 10)
+}
+export const monthKey = d => String(d).slice(0, 7)
+export const dayKey = d => String(d).slice(0, 10)

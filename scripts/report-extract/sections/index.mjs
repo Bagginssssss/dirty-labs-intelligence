@@ -10,6 +10,9 @@
 import s1 from './s1-account-monthly.mjs'
 import s0 from './s0-account-weekly.mjs'
 import s2 from './s2-february-diagnostic.mjs'
+import s4 from './s4-acquisition.mjs'
+import s5 from './s5-retention.mjs'
 
 // Batch A: §1 (account monthly) + §0 (account weekly) + §2 (February diagnostic).
-export const SECTIONS = [s1, s0, s2]
+// Batch B: §4 (acquisition) + §5 (retention).
+export const SECTIONS = [s1, s0, s2, s4, s5]
