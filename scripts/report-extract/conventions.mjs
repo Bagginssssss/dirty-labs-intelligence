@@ -88,3 +88,29 @@ export function mondayOf(dateStr) {
 }
 export const monthKey = d => String(d).slice(0, 7)
 export const dayKey = d => String(d).slice(0, 10)
+
+// Inclusive day span between two ISO dates (both endpoints counted): 2026-04-01 → 2026-04-30 = 30.
+export function daysInclusive(startStr, endStr) {
+  const a = Date.parse(dayKey(startStr) + 'T00:00:00Z')
+  const b = Date.parse(dayKey(endStr) + 'T00:00:00Z')
+  return Math.round((b - a) / 86400000) + 1
+}
+
+// ── §6 category performance (query plan v1.4 §6) ───────────────────────────────────────────────────
+// Five category slugs (asins.product_line, INB-179). Storage values only — display labels live in the
+// report layer; never query against a label.
+export const CATEGORY_SLUGS = ['laundry_detergent', 'laundry_booster', 'dish', 'toilet', 'accessories']
+
+// The four business_report windows, keyed by their window-START report_date. business_report stores one
+// aggregated row per ASIN per window start; the window END is NOT in that table, so it is looked up from
+// report_coverage (report_key='business_report_child_asin') at extract time and NEVER assumed. Closed
+// intervals, both endpoints inclusive → lengths 30/32/31/32 days; P1 and P2 overlap by 3 days
+// (Jun 26–28), disclosed on the period. Windows are 30–32 days, so raw totals are NEVER compared across
+// them — every cross-window comparison runs on a daily rate.
+export const S6_WINDOWS = [
+  { key: 'baseline', period_start: '2026-04-01' },
+  { key: 'p1', period_start: '2026-05-28' },
+  { key: 'p2', period_start: '2026-06-26' },
+  { key: 'p3', period_start: '2026-07-30' },
+]
+export const S6_COVERAGE_REPORT_KEY = 'business_report_child_asin'
