@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# INB-178 Phase 2 report extract — output artifact (moved into the reports repo by hand, never served)
+/scripts/report-extract/out/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
