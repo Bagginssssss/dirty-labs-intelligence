@@ -1,8 +1,21 @@
 // INB-178 Phase 2 §8 — Search-term intelligence.
-//   §8a Category board — five categories × { Converting, Expensive, Emerging }, non-branded terms only,
+//   §8a Category board — five categories × { Converting, Expensive, Near-zero }, non-branded terms only,
 //       joined to category via campaign name (classifyCampaignCategory: ASIN-in-name → product-word →
 //       bundle-anchor → unmapped). 60-day weekly sparkline per listed term.
-//   §8b Conquest map — competitor terms by orders + ROAS, peers foregrounded. KEYWORD-ONLY, deliberately.
+//   §8b Conquest map — competitor BRANDS by orders + ROAS, peers foregrounded. KEYWORD-ONLY, deliberately.
+//
+// PAGE WEIGHT (INB-178 Batch 3 G1, Darren's ruling): this section is baked into a static bundle the
+// client downloads, and it was 1.5 MB — 91% of report-data.json — against ~66 kB the report actually
+// renders. Two bands were emitted that no report element consumes:
+//   · Emerging — 1,466 term rows with sparklines, 844 kB, 56% of the section. The TERMS are dropped;
+//     a summary-only band remains (rule + count, the near_zero_band shape), because losing the fact
+//     that the band exists and how big it is would be a real loss to anyone reading the artifact
+//     later. No element in the copy deck renders it.
+//   · §8b raw term rows — 4,643 rows, 592 kB. The report discusses conquest at BRAND level ("Blueland,
+//     Seventh Generation and Molly's Suds drive the most converting terms"), and the report layer is
+//     forbidden from aggregating — it renders figures, it does not derive them. So the rollup belongs
+//     here, where the source rows are. Raw rows dropped; brands emitted.
+// Converting is untouched: it is exactly what §8.1 renders.
 //
 // DATA-INTEGRITY (INB-182): sp_search_term_report shares the sp_targeting_report defect — corrupted before
 // 2026-04-18 (bulk dumps on 2026-03-01 +$49k SP and 2026-04-01 +$47k SP, under-reports every other pre-
@@ -19,7 +32,7 @@ import {
 } from '../conventions.mjs'
 
 const START = '2026-04-18', END = '2026-08-29'
-const EMERGING_FROM = '2026-07-01'      // "last 60 days" floor for Emerging (absent 04-18→06-30)
+const SPARK_FROM = '2026-07-01'         // "last 60 days" floor for the per-term sparklines
 const NB_ACOS_TARGET = 0.58             // STATED business target for non-branded — not derived
 const EXPENSIVE_SPEND = 250             // spend floor over the window
 const CONVERTING_TOP_N = 20
@@ -76,9 +89,9 @@ export default {
       }
     }
 
-    // 60-day weekly sparkline (last 60 days: EMERGING_FROM → END), Monday-anchored
+    // 60-day weekly sparkline (last 60 days: SPARK_FROM → END), Monday-anchored
     const sparkWeeks = []
-    for (let w = mondayOf(EMERGING_FROM); w <= END; w = addDays(w, 7)) sparkWeeks.push(w)
+    for (let w = mondayOf(SPARK_FROM); w <= END; w = addDays(w, 7)) sparkWeeks.push(w)
     const sparkline = g => sparkWeeks.map(w => ({ week: w, spend: +(g.weekly.get(w)?.spend ?? 0).toFixed(2), orders: g.weekly.get(w)?.orders ?? 0 }))
     const row = g => ({ term: g.term, spend: g.spend, orders_7d: g.orders, sales_7d: g.sales, acos: acos(g.spend, g.sales), roas: roas(g.sales, g.spend), beats_target_acos: g.sales > 0 ? (g.spend / g.sales) <= NB_ACOS_TARGET : false })
 
@@ -93,8 +106,7 @@ export default {
       const expensiveAll = terms.filter(g => g.spend >= EXPENSIVE_SPEND && g.orders === 0).sort((a, b) => b.spend - a.spend)
       if (expensiveAll.length > 20) expensiveOverflow.push({ category: slug, count: expensiveAll.length })
       const nearZero = terms.filter(g => g.spend >= EXPENSIVE_SPEND && g.orders >= 1 && g.orders <= 2)
-      const emerging = terms.filter(g => dayKey(g.first_date) >= EMERGING_FROM && g.orders > 0).sort((a, b) => b.orders - a.orders)
-        .map(g => ({ ...row(g), first_date: dayKey(g.first_date), sparkline_60d: sparkline(g) }))
+      const emerging = terms.filter(g => dayKey(g.first_date) >= SPARK_FROM && g.orders > 0)
       board[slug] = {
         non_branded_acos: acos(nbTot, salesTot),
         non_branded_acos_gap_vs_target: acos(nbTot, salesTot) == null ? null : acos(nbTot, salesTot) - NB_ACOS_TARGET,
@@ -102,7 +114,7 @@ export default {
         converting: { rule: 'non-branded terms ranked by orders_7d desc, not filtered by ACOS', top_n: CONVERTING_TOP_N, terms: converting },
         expensive: { rule: `spend >= $${EXPENSIVE_SPEND} AND orders_7d = 0 over the window`, count: expensiveAll.length, terms: expensiveAll.map(g => ({ term: g.term, spend: g.spend, sales_7d: g.sales, sparkline_60d: sparkline(g) })) },
         near_zero_band: { rule: `spend >= $${EXPENSIVE_SPEND} AND orders_7d in [1,2] — summary only, no term list`, count: nearZero.length, total_spend: sumBy(nearZero, 'spend') },
-        emerging: { rule: 'non-branded, first appears in the last 60 days (>= 2026-07-01, absent 04-18→06-30), orders > 0', terms: emerging },
+        emerging_band: { rule: 'non-branded, first appears in the last 60 days (>= 2026-07-01, absent 04-18→06-30), orders > 0 — summary only, no term list', count: emerging.length, total_spend: sumBy(emerging, 'spend'), orders: sumBy(emerging, 'orders') },
       }
     }
     // mapped vs unmapped non-branded ACOS — locates where the inefficiency sits (Darren, G3). Compute each
@@ -112,13 +124,27 @@ export default {
     const mappedNbAcos = acos(mappedNbSpend, mappedNbSales)
 
     // ── §8b conquest (keyword-only, deliberately) ─────────────────────────────────────────────────
+    // Rolled up to BRAND. Ranked by orders, because that is what §8.4's board ranks by and two boards
+    // ranking on different measures is a trap — a brand can lead on volume and trail on efficiency, so
+    // the exhibit carries both columns and the copy names both sets.
     const conquestTerms = [...conquest.values()]
-    const byTier = t => conquestTerms.filter(g => g.tier === t).sort((a, b) => b.orders - a.orders)
-      .map(g => ({ term: g.term, brand: g.brand, orders_7d: g.orders, spend: g.spend, sales_7d: g.sales, acos: acos(g.spend, g.sales), roas: roas(g.sales, g.spend) }))
+    const byTier = t => {
+      const brands = new Map()
+      for (const g of conquestTerms) {
+        if (g.tier !== t) continue
+        const key = g.brand ?? '(unclassified)'
+        const b = brands.get(key) ?? { brand: key, tier: t, terms: 0, orders_7d: 0, spend: 0, sales_7d: 0 }
+        b.terms += 1; b.orders_7d += g.orders; b.spend += g.spend; b.sales_7d += g.sales
+        brands.set(key, b)
+      }
+      return [...brands.values()]
+        .sort((a, b) => b.orders_7d - a.orders_7d)
+        .map(b => ({ ...b, acos: acos(b.spend, b.sales_7d), roas: roas(b.sales_7d, b.spend) }))
+    }
 
     return {
       meta: {
-        window: { start: START, end: END, note: 'Windows start 2026-04-18 per the INB-182 data-integrity boundary — sp_search_term_report is corrupted before then (same defect as sp_targeting_report). Converting/Expensive aggregate the full clean window; Emerging + sparklines cover the last 60 days.' },
+        window: { start: START, end: END, note: 'Windows start 2026-04-18 per the INB-182 data-integrity boundary — sp_search_term_report is corrupted before then (same defect as sp_targeting_report). Converting/Expensive aggregate the full clean window; the per-term sparklines cover the last 60 days.' },
         non_branded_acos_target: { value: NB_ACOS_TARGET, basis: 'STATED business target for non-branded terms — NOT computed. Account SP ACOS ~28% blends branded (ROAS 5.24, ACOS ~19% — the shopper already wants us) with non-branded (ROAS 1.56, ACOS ~64%); judging non-branded against the blended figure compares unlike things and would empty the Converting column.' },
         acos_gap_position: 'BUSINESS POSITION, not a computed finding: the non-branded ACOS gap (actual vs 0.58) is a gap worth closing ONLY conditional on it not costing acquisition. If non-branded ACOS tightens toward 0.58 while the NTB rate holds near 26.5% (§4) and subscriber growth continues (§4/§5), the gap was real inefficiency. If either cohort metric falls with it, ~64% was the acquisition cost and the right move is to STOP tightening. This is §8\'s one deliberate cross-section link — see §4 (NTB, subscribers) and §5 (retention).',
         brand_matching_note: 'Broad-match-modifier keyword forms are normalised before matching (conventions.normalizeBrandText) — a raw-string match misfiles "+dirty +labs …".',
@@ -152,6 +178,8 @@ export default {
         expensive_overflow_flag: expensiveOverflow.length ? { note: `$${EXPENSIVE_SPEND} over 4.5 months is ~$55/mo — a low bar. These categories exceed 20 Expensive terms; propose raising the floor rather than truncating.`, categories: expensiveOverflow } : null,
       },
       s8b_conquest_map: {
+        grain: 'BRAND, not term. Each row aggregates that brand\'s competitor search terms over the window; `terms` is how many distinct terms it aggregates. Raw term rows are deliberately not emitted — 4,643 of them were 592 kB of a bundle the client downloads, the report discusses conquest at brand level, and the report layer may not aggregate (it renders figures, it does not derive them).',
+        ranked_by: 'orders_7d desc within each tier',
         scope: 'KEYWORD-ONLY, deliberately. §8b is for the DTC marketing director: keyword conquest transfers to another channel as SEARCH INTENT, while ASIN targeting is an Amazon placement mechanic that does not transfer. The full competitor programme (keyword + ASIN) is in §7d — do not read §8b as the whole conquest picture.',
         window: { start: START, end: END },
         peer_foregrounded: byTier('peer'),
