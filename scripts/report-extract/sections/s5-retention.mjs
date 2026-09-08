@@ -24,23 +24,26 @@ export default {
       order: [{ column: 'metric_date' }],
     })
     const retention = await db.selectAll('sns_dashboard_snapshots', 'snapshot_date,dim1,value', {
-      filter: q => q.eq('brand_id', BRAND_ID).eq('report', 'subscriber_retention'),
+      filter: q => q.eq('brand_id', BRAND_ID).eq('report', 'subscriber_retention').lte('snapshot_date', '2026-08-31'), // Batch 4a: cap September
       order: [{ column: 'snapshot_date' }],
     })
     const rp = await db.selectAll('brand_analytics_repeat_purchase', 'reporting_date,level,repeat_customer_share,repeat_sales_share', {
-      filter: q => q.eq('brand_id', BRAND_ID).eq('level', 'brand'),
+      filter: q => q.eq('brand_id', BRAND_ID).eq('level', 'brand').lte('reporting_date', '2026-08-31'), // Batch 4a: cap September
       order: [{ column: 'reporting_date' }],
     })
     const loyalty = await db.selectAll('brand_analytics_customer_loyalty', 'period_end_date,repeat_purchase_rate,avg_repeat_purchase_interval', {
-      filter: q => q.eq('brand_id', BRAND_ID).eq('granularity', 'weekly'),
+      filter: q => q.eq('brand_id', BRAND_ID).eq('granularity', 'weekly').lte('period_end_date', '2026-08-31'), // Batch 4a: cap September
       order: [{ column: 'period_end_date' }],
     })
 
     const pts = m => daily.filter(r => r.metric === m).map(r => ({ date: dayKey(r.metric_date), value: Number(r.value) }))
     const rr = pts('reorder_rate'); const cs = pts('coupon_subs_share'); const rs = pts('reorder_sales')
 
-    // ── primary exhibit: weekly reorder_rate + coupon_subs_share, 2026-06-01 → 2026-08-28 (Monday-anchored) ──
-    const inExhibit = d => d >= '2026-06-01' && d <= '2026-08-28'
+    // ── primary exhibit: weekly reorder_rate + coupon_subs_share, 2026-06-01 → 2026-08-30 (Monday-anchored) ──
+    // Batch 4a: end 08-30 (Sunday) so the final week (Mon Aug 24 → Sun Aug 30) is complete — extending to
+    // 08-31 (Monday) would add a 1-day partial week to a weekly trend exhibit. Full August still feeds the
+    // monthly reorder_rate below (67.71% August, all 31 days).
+    const inExhibit = d => d >= '2026-06-01' && d <= '2026-08-30'
     const rrW = new Map(group(rr.filter(p => inExhibit(p.date)), mondayOf))
     const csW = new Map(group(cs.filter(p => inExhibit(p.date)), mondayOf))
     const weeks = [...new Set([...rrW.keys(), ...csW.keys()])].sort().map(wk => ({
@@ -68,7 +71,7 @@ export default {
 
     return {
       primary_exhibit: {
-        window: { start: '2026-06-01', end: '2026-08-28', week_anchor: 'monday' },
+        window: { start: '2026-06-01', end: '2026-08-30', week_anchor: 'monday' },
         note: 'reorder_rate and coupon_subs_share on one weekly series so the dilution and the recovery are visible together. Both are mean-of-daily-rates; days_observed per metric exposes the Aug 20–22 coupon_subs_share gap (reorder_rate has no gap in that week).',
         trough_week_start_monday: '2026-07-13',
         weeks,

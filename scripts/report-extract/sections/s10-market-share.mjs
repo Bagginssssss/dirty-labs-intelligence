@@ -11,7 +11,7 @@ export default {
   key: 's10_market_share',
   async extract({ db }) {
     const brands = await db.selectAll('smartscout_subcategory_brands', 'snapshot_date,subcategory,brand_name,market_share,market_share_change,est_monthly_revenue', {
-      filter: q => q.eq('brand_id', BRAND_ID), order: [{ column: 'snapshot_date' }],
+      filter: q => q.eq('brand_id', BRAND_ID).lte('snapshot_date', '2026-08-31'), order: [{ column: 'snapshot_date' }], // Batch 4a: cap — SmartScout now runs into September
     })
     const snaps = [...new Set(brands.map(r => dayKey(r.snapshot_date)))].sort()
     const latestSnap = snaps.at(-1)
@@ -29,7 +29,7 @@ export default {
     }
 
     const products = await db.selectAll('smartscout_subcategory_products', 'snapshot_date,subcategory,asin,title,brand_name,category_revenue_pct,primary_subcategory_rank,est_monthly_revenue', {
-      filter: q => q.eq('brand_id', BRAND_ID).ilike('brand_name', '%dirty labs%'), order: [{ column: 'snapshot_date' }],
+      filter: q => q.eq('brand_id', BRAND_ID).ilike('brand_name', '%dirty labs%').lte('snapshot_date', '2026-08-31'), order: [{ column: 'snapshot_date' }],
     })
     const dlProductsLatest = products.filter(p => dayKey(p.snapshot_date) === latestSnap)
       .map(p => ({ subcategory: p.subcategory, asin: p.asin, title: p.title, category_revenue_pct: Number(p.category_revenue_pct), subcategory_rank: p.primary_subcategory_rank, est_monthly_revenue: Number(p.est_monthly_revenue) }))

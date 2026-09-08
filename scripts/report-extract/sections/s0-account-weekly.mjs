@@ -1,13 +1,13 @@
-// INB-178 Phase 2 §0 — weekly account ordered revenue, Jan 1 → Aug 29 2026, from business_report_daily.
-// Weeks are Monday-anchored (ISO): this is the anchoring under which the final data week is Aug 24–29,
-// as the query plan expects. A week is `partial` when fewer than 7 of its days fall in the data range —
-// this flags BOTH the opening week (Jan 1 is a Thursday) and the final week (data ends Sat Aug 29). The
-// final partial week is additionally surfaced at the top level so the consumer need not work it out.
-// Full precision — no rounding here.
+// INB-178 Phase 2 §0 — weekly account ordered revenue, Jan 1 → Aug 30 2026, from business_report_daily.
+// Weeks are Monday-anchored (ISO). Batch 4a: the range ends 2026-08-30, NOT 08-31 — August 30 is a Sunday,
+// so the final week (Mon Aug 24 → Sun Aug 30) is COMPLETE and the series ends on a full week (extending to
+// Mon Aug 31 would re-introduce a 1-day partial week, the exact caveat this refresh removes). A week is
+// still `partial` when fewer than 7 of its days fall in the range — that now flags ONLY the opening week
+// (Jan 1 is a Thursday). final_week_partial should be false. Full precision — no rounding here.
 import { BRAND_ID } from '../conventions.mjs'
 
 const RANGE_START = '2026-01-01'
-const RANGE_END = '2026-08-29'
+const RANGE_END = '2026-08-30' // complete final week (Aug 24–30); Aug 30 is a Sunday
 const ymd = d => String(d).slice(0, 10)
 
 function mondayOf(dateStr) {

@@ -14,10 +14,14 @@
 import { BRAND_ID, meanOfDailyRates, dailyRate, mondayOf, monthKey, dayKey } from '../conventions.mjs'
 
 const DAILY_START = '2026-01-01'
-const METRIC_END = { // each metric's own coverage end (query plan §C / brief §4)
+// Batch 4a: report window is full August (08-31) for every metric EXCEPT active_subscriptions/_ly, which
+// stay 08-30 — Seller Central double-counts subscribers at month end (a known platform bug), so the Aug 31
+// point is unreliable and excluded. These ends are ENFORCED on the daily points below (pts caps at
+// METRIC_END[m]), not merely labelled — so a stray Aug 31 subscriber row can never slip in.
+const METRIC_END = {
   active_subscriptions: '2026-08-30', active_subscriptions_ly: '2026-08-30',
-  sns_sales: '2026-08-28', sns_sales_share: '2026-08-28',
-  coupon_subs_share: '2026-08-30', coupon_sales_sns: '2026-08-28',
+  sns_sales: '2026-08-31', sns_sales_share: '2026-08-31',
+  coupon_subs_share: '2026-08-31', coupon_sales_sns: '2026-08-31',
 }
 
 // ── period helpers ────────────────────────────────────────────────────────────────
@@ -63,8 +67,14 @@ export default {
       filter: q => q.eq('brand_id', BRAND_ID).gte('report_date', DAILY_START).lte('report_date', '2026-08-31'),
       order: [{ column: 'report_date' }],
     })
+    // Batch 4a: pull through 2026-09-01 (NOT 09-07). customer_ltv_by_segment / customer_share_by_segment
+    // are TTM state snapshots first captured Sep 1 — a LABELLED EXCEPTION to the 08-31 cap (Darren's G1
+    // ruling): a trailing-twelve-month segment summary captured Sep 1 describes a period almost entirely
+    // inside the report window, same as the listing rating / SmartScout-latest. deliveries_breakdown is a
+    // transaction-window report and is capped at 08-31 in delIncluded below.
+    const SEGMENT_SNAPSHOT_EXCEPTION = '2026-09-01'
     const snaps = await db.selectAll('sns_dashboard_snapshots', 'report,snapshot_date,dim1,dim2,value', {
-      filter: q => q.eq('brand_id', BRAND_ID).in('report', ['customer_ltv_by_segment', 'customer_share_by_segment', 'deliveries_breakdown']),
+      filter: q => q.eq('brand_id', BRAND_ID).in('report', ['customer_ltv_by_segment', 'customer_share_by_segment', 'deliveries_breakdown']).lte('snapshot_date', SEGMENT_SNAPSHOT_EXCEPTION),
       order: [{ column: 'snapshot_date' }],
     })
     const spc = await db.selectAll('sp_campaign_performance', 'report_date,ad_type,ntb_orders_14d,orders_7d', {
@@ -73,12 +83,12 @@ export default {
     })
     const loyalty = await db.selectAll('brand_analytics_customer_loyalty',
       'granularity,period_end_date,ntb_orders,total_orders,ntb_customers,total_customers,ntb_sales,total_sales', {
-        filter: q => q.eq('brand_id', BRAND_ID).eq('granularity', 'weekly'),
+        filter: q => q.eq('brand_id', BRAND_ID).eq('granularity', 'weekly').lte('period_end_date', '2026-08-31'), // Batch 4a: cap — a Sep-05 weekly row now exists
         order: [{ column: 'period_end_date' }],
       })
 
-    // daily points per metric: [{date, value}]
-    const pts = m => snsDaily.filter(r => r.metric === m).map(r => ({ date: dayKey(r.metric_date), value: Number(r.value) }))
+    // daily points per metric: [{date, value}], capped at that metric's END (enforces active_subscriptions@08-30)
+    const pts = m => snsDaily.filter(r => r.metric === m).map(r => ({ date: dayKey(r.metric_date), value: Number(r.value) })).filter(x => x.date <= METRIC_END[m])
 
     // ── point-in-time: active_subscriptions & _ly (series + first/last + gaps) ──
     const pit = m => {
@@ -147,7 +157,7 @@ export default {
     // deliveries_breakdown: Aug-17 onward only (Aug-10 is a ~2.01x different basis — excluded, not averaged)
     const delAll = snapReport('deliveries_breakdown')
     const delDates = [...new Set(delAll.map(s => dayKey(s.snapshot_date)))].sort()
-    const delIncluded = delDates.filter(d => d >= '2026-08-17')
+    const delIncluded = delDates.filter(d => d >= '2026-08-17' && d <= '2026-08-31') // transaction-window report — August only (the Sep-1 exception is segment snapshots ONLY)
     const delSnapshots = delIncluded.map(d => {
       const rows = delAll.filter(s => dayKey(s.snapshot_date) === d)
       return { snapshot_date: d, total: rows.reduce((a, s) => a + Number(s.value), 0), buckets: rows.map(s => ({ segment: s.dim1, value: Number(s.value) })) }
@@ -181,15 +191,23 @@ export default {
         subscriber_source: 'sns_dashboard_daily is the SOLE source for subscriber counts. subscribe_and_save.report_date is the window START while its active_subscriptions value is the period-END balance, so the row labelled 2026-01-01 carries the 2026-01-31 figure. The two sources agree EXACTLY once aligned on window end (verified: subscribe_and_save 2026-01-01 = sns_dashboard_daily 2026-01-31 = 60,714). sns_dashboard_daily remains the sole source here because it is a true daily series; the point is that the tables do NOT disagree, and neither should be "corrected" toward the other.',
         rate_aggregation: 'reorder_rate / sns_sales_share / coupon_subs_share are stored by Amazon as daily scalars with no numerator or denominator, so their monthly/weekly aggregates are an unweighted mean of daily rates (aggregation:"mean_of_daily_rates"). sns_sales_share additionally carries a true sum-then-divide rate for validation.',
       },
-      active_subscriptions: pit('active_subscriptions'),
+      active_subscriptions: { ...pit('active_subscriptions'), end_date_note: 'Ends 2026-08-30, NOT 08-31: Seller Central double-counts subscribers at month end (a known platform bug), so the Aug 31 point is unreliable and excluded. Every other §4 metric runs to 08-31.' },
       active_subscriptions_ly: pit('active_subscriptions_ly'),
       sns_sales: sum('sns_sales'),
       sns_sales_share: snsSalesShareDual,
       coupon_subs_share: couponSubsShare,
       coupon_sales_sns: sum('coupon_sales_sns'),
+      coverage: {
+        note: 'Batch 4a: the report window is 2026 through August; every metric is capped at 2026-08-31 EXCEPT (a) active_subscriptions/_ly, held at 2026-08-30 (Seller Central month-end double-count), and (b) the two segment state-snapshots below, which use the 2026-09-01 capture.',
+        segment_snapshot_exception: {
+          reports: ['customer_ltv_by_segment', 'customer_share_by_segment'],
+          snapshot_date: SEGMENT_SNAPSHOT_EXCEPTION,
+          reason: 'These TTM (trailing-twelve-month) segment summaries were first captured 2026-09-01 — no August-or-earlier snapshot exists. As STATE snapshots (not a September transaction window) they describe a period almost entirely inside the report window, so the Sep-1 capture is used, labelled "as of September 1". Same treatment as the listing rating and SmartScout-latest. Ruled by Darren, G1.',
+        },
+      },
       snapshots: {
-        customer_ltv_by_segment: { note: 'Average GMS by customer segment (3 rows). Distinct from subscriber_ltv (8 rows) — that is a different report and was not read.', snapshot_date: snapRows('customer_ltv_by_segment')[0]?.snapshot_date ?? null, rows: snapRows('customer_ltv_by_segment') },
-        customer_share_by_segment: { snapshot_date: snapRows('customer_share_by_segment')[0]?.snapshot_date ?? null, rows: snapRows('customer_share_by_segment') },
+        customer_ltv_by_segment: { note: 'Average GMS by customer segment (3 rows). Distinct from subscriber_ltv (8 rows) — that is a different report and was not read. Snapshot as of 2026-09-01 (segment-snapshot exception — see coverage).', snapshot_date: snapRows('customer_ltv_by_segment')[0]?.snapshot_date ?? null, rows: snapRows('customer_ltv_by_segment') },
+        customer_share_by_segment: { note: 'Snapshot as of 2026-09-01 (segment-snapshot exception — see coverage).', snapshot_date: snapRows('customer_share_by_segment')[0]?.snapshot_date ?? null, rows: snapRows('customer_share_by_segment') },
         deliveries_breakdown: {
           note: 'S&S-only shipped revenue by delivery count. Aug-17 snapshot onward only: the Aug-10 pull is a ~2.01x different basis (excluded, not averaged). This is the S&S-only ~$14.2M report, NOT total_deliveries_breakdown (~$42M, all sales) — a factor-of-three difference; the latter was not read.',
           excluded: [{ snapshot_date: '2026-08-10', reason: 'different basis (~2.009x vs Aug-17); pre-basis-change' }].filter(() => delDates.includes('2026-08-10')),
@@ -205,6 +223,9 @@ export default {
           ntb_customer_rate: lyTotCust > 0 ? lyCust / lyTotCust : null,
           totals: { ntb_orders: lyOrders, total_orders: lyTotOrders, ntb_customers: lyCust, total_customers: lyTotCust },
           weekly: loyaltyWeekly,
+          // §4.3 exhibit (Batch 4a 1c): clean dual-series for the weekly NTB customers + sales chart,
+          // Feb 21 → Aug 29 (loyalty is weekly; its last full week in August ends Aug 29).
+          weekly_exhibit: loyaltyWeekly.map(r => ({ week_ending: r.week_ending, ntb_customers: r.ntb_customers, ntb_sales: r.ntb_sales })),
         },
         ad_attributed: {
           scope: 'ad-attributed (sp_campaign_performance), SB/SBV ONLY — ntb_orders_14d is null on every SP row, so SP (roughly 88% of spend) contributes nothing. This is a narrow slice and must NOT be read as an account NTB number.',

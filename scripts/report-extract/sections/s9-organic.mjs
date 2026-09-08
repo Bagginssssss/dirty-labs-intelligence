@@ -4,10 +4,11 @@
 // for "97+". Impression/purchase share from search_query_performance (Brand Analytics). Full precision.
 import { BRAND_ID, dayKey, mondayOf, sumBy } from '../conventions.mjs'
 
-const RANK_FROM = '2026-06-01', RANK_TO = '2026-08-30'
+const RANK_FROM = '2026-06-01', RANK_TO = '2026-08-31' // Batch 4a: full August (was 08-30)
+const CAP = '2026-08-31'                // no September data enters the 2026 report
 const SENTINEL = 98                     // scale_insights_keyword_rank writes 98 for "97+"
 const MOVERS_TOP_N = 15
-const WIN = { pre: ['2026-07-27', '2026-08-06'], post: ['2026-08-08', '2026-08-13'], ext: ['2026-08-24', '2026-08-30'] }
+const WIN = { pre: ['2026-07-27', '2026-08-06'], post: ['2026-08-08', '2026-08-13'], ext: ['2026-08-24', '2026-08-31'] }
 
 export default {
   key: 's9_organic',
@@ -59,7 +60,7 @@ export default {
     const withVolume = rows => rows.filter(g => g.search_volume > 0).length
 
     const sqp = await db.selectAll('search_query_performance', 'report_date,search_query_volume,impressions_brand_share,purchases_brand_share', {
-      filter: q => q.eq('brand_id', BRAND_ID).gte('report_date', RANK_FROM), order: [{ column: 'report_date' }],
+      filter: q => q.eq('brand_id', BRAND_ID).gte('report_date', RANK_FROM).lte('report_date', CAP), order: [{ column: 'report_date' }],
     })
     // impressions_brand_share / purchases_brand_share are stored on a 0–100 scale; divide by 100 so §9
     // shares are 0–1 fractions like every other share in the report.
@@ -78,11 +79,11 @@ export default {
         window: { start: RANK_FROM, end: RANK_TO },
       },
       title_migration: {
-        note: 'RE-RUN against data through 2026-08-30 (not inherited). Pre = Jul 27–Aug 6, Post = Aug 8–13, Extended = Aug 24–30.',
+        note: 'RE-RUN against data through 2026-08-31 (full August, Batch 4a; not inherited). Pre = Jul 27–Aug 6, Post = Aug 8–13, Extended = Aug 24–31.',
         windows: WIN,
         portfolio: { pre: portfolioRank(WIN.pre), post: portfolioRank(WIN.post), extended_through_aug30: portfolioRank(WIN.ext) },
         per_asin: perAsin,
-        conclusion: 'RE-RUN through 2026-08-30, not inherited. The UNWEIGHTED portfolio rank (comparable to the prior "flat around 34" finding) sits ~33.6 pre → ~34.6 post → ~33.1 by Aug 30 — flat, and recovered. The VOLUME-WEIGHTED rank (~86 → ~84 → ~79) is much worse in level because it is dominated by high-volume head terms where DL ranks ~80+, but it also improved. Both measures confirm a re-scoring RESHUFFLE, not decay. The worst ASIN\'s pre→post delta is ~+2.0 (matches the prior finding); casualties tied to dropped title words are offset by same-ASIN gains (see rank_movers). Both weighted and unweighted figures are provided per window in portfolio.{pre,post,extended_through_aug30}.',
+        conclusion: 'RE-RUN through 2026-08-31 (full August), not inherited. The UNWEIGHTED portfolio rank (comparable to the prior "flat around 34" finding) is flat pre→post and recovers by end of August; the VOLUME-WEIGHTED rank is much worse in level (dominated by high-volume head terms where DL ranks ~80+) but also improves. Both measures confirm a re-scoring RESHUFFLE, not decay. The exact per-window figures are in portfolio.{pre,post,extended_through_aug30}.weighted_avg_rank/unweighted_avg_rank; casualties tied to dropped title words are offset by same-ASIN gains (see rank_movers).',
       },
       rank_movers: {
         note: 'First vs last rank per keyword×ASIN over the window; delta<0 = rank improved (lower is better). The raw top-N-by-delta lists are deliberately NOT emitted: they were ranked partly by the 97+ sentinel rather than by measured movement. Use clean_movers for magnitudes and range_events for entries and exits.',

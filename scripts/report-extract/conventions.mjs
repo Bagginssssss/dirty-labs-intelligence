@@ -20,11 +20,13 @@ export const AD_TYPES = ['SP', 'SB', 'SBV']
 // 2026-03-01 but SB/SBV only from 2026-05-01. (The query plan originally carried the 2026-05-01 date on
 // the targeting row by mistake; verified against prod — targeting has 1,411 SB + 4,891 SBV rows in
 // March 2026.)
+// Batch 4a: report window extended to full August (end 2026-08-31). Sources now run into September; every
+// window is capped at 2026-08-31 so no September data enters the 2026 report.
 export const COVERAGE = {
-  business_report_daily: { start: '2025-05-01', end: '2026-08-29' },
-  sp_campaign: { sp_start: '2025-05-01', sbsbv_start: '2026-03-01', end: '2026-08-29' },
-  sp_targeting: { start: '2026-03-01', sbsbv_start: '2026-03-01', end: '2026-08-29' },
-  sp_search_term: { start: '2026-03-01', sbsbv_start: '2026-05-01', end: '2026-08-29' },
+  business_report_daily: { start: '2025-05-01', end: '2026-08-31' },
+  sp_campaign: { sp_start: '2025-05-01', sbsbv_start: '2026-03-01', end: '2026-08-31' },
+  sp_targeting: { start: '2026-03-01', sbsbv_start: '2026-03-01', end: '2026-08-31' },
+  sp_search_term: { start: '2026-03-01', sbsbv_start: '2026-05-01', end: '2026-08-31' },
 }
 // SB/SBV coverage begins here for the campaign table (sp_campaign_performance) — before this date,
 // all-types spend == SP-only spend by construction. (Same date for sp_targeting; NOT sp_search_term.)
@@ -236,7 +238,17 @@ function competitorMatchNorm(t) {
   return { brand: matches[0].brand, tier: matches[0].tier, context: matches[0].context, all_brands: [...new Set(matches.map(m => m.brand))] }
 }
 
-export function classifyBrand(term) {
+export function classifyBrand(term, ownAsinSet = null) {
+  // ASIN-shaped bare search term (Batch 4a): an OWN ASIN is branded intent — someone typing your ASIN
+  // already has your product, and it behaves like branded traffic (~18% ACOS); any OTHER ASIN-shaped term
+  // is competitor conquest (tier other). Requires ownAsinSet to tell them apart; without it, ASINs fall
+  // through to the text rules (the pre-4a behaviour). Callers that classify search terms pass ownAsinSet.
+  const raw = String(term ?? '').trim()
+  if (ownAsinSet && /^b0[a-z0-9]{8}$/i.test(raw)) {
+    return ownAsinSet.has(raw.toUpperCase())
+      ? { class: 'branded', brand: 'Dirty Labs', pattern: 'own_asin' }
+      : { class: 'competitor', brand: 'Competitor ASIN', tier: 'other', context: 'competitor_asin' }
+  }
   const t = normalizeBrandText(term)
   for (const p of DL_RE) if (p.re.test(t)) return { class: 'branded', brand: 'Dirty Labs', pattern: p.raw }
   const m = competitorMatchNorm(t)
@@ -317,7 +329,7 @@ export function classifyTarget(value, ownAsinSet) {
   if (p.kind === 'asin') return { bucket: ownAsinSet.has(p.asin) ? 'own_asin_defensive' : 'competitor_asin', kind: 'asin', asin: p.asin }
   if (p.kind === 'auto') return { bucket: 'auto', kind: 'auto', mode: p.mode }
   if (p.kind === 'category') return { bucket: 'category', kind: 'category' }
-  const c = classifyBrand(p.keyword)
+  const c = classifyBrand(p.keyword, ownAsinSet)
   const bucket = c.class === 'branded' ? 'branded_keyword' : c.class === 'competitor' ? 'competitor_keyword' : 'non_branded_keyword'
   return { bucket, kind: 'keyword', keyword: p.keyword, brand: c.brand, tier: c.tier, context: c.context }
 }

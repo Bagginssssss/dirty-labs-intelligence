@@ -19,7 +19,7 @@ import {
 } from '../conventions.mjs'
 
 const CAMPAIGN_START = '2025-05-01', CAMPAIGN_END = '2026-08-31'
-const S7D_START = '2026-04-18', S7D_END = '2026-08-29'
+const S7D_START = '2026-04-18', S7D_END = '2026-08-31' // Batch 4a: full August (was 08-29)
 const PRIME_DAY_MONTH = '2026-06'
 const TIERS = ['peer', 'giant', 'other']
 // The audit ran in phases March → early August, not a binary pre/post (Darren, G3). Dated markers for the
@@ -56,7 +56,7 @@ export default {
     const asins = await db.selectAll('asins', 'asin', { filter: q => q.eq('brand_id', BRAND_ID), order: [{ column: 'asin' }] })
     const ownAsinSet = new Set(asins.map(a => String(a.asin).toUpperCase()))
     const rules = await db.selectAll('scale_insights_rule_assignments', 'snapshot_date,bidding_rules,last_30d_spend', {
-      filter: q => q.eq('brand_id', BRAND_ID), order: [{ column: 'snapshot_date' }],
+      filter: q => q.eq('brand_id', BRAND_ID).lte('snapshot_date', '2026-08-31'), order: [{ column: 'snapshot_date' }], // Batch 4a: cap September
     })
 
     const monthsOf = rows => [...new Set(rows.map(r => monthKey(r.report_date)))].sort()
@@ -181,7 +181,7 @@ export default {
         months: sevenC,
       },
       s7d_target_class: {
-        note: 'Target-level six buckets (auto_category reported split → auto + category = seven fields). Windowed 2026-04-18 → 2026-08-29 per the data-integrity boundary; April is a partial 13-day window (04-18–30), labelled. competitor-directed spend = competitor_asin + competitor_keyword (the account runs conquest on BOTH the ASIN-placement rail and the keyword rail).',
+        note: 'Target-level six buckets (auto_category reported split → auto + category = seven fields). Windowed 2026-04-18 → 2026-08-31 (full August, Batch 4a) per the data-integrity boundary; April is a partial 13-day window (04-18–30), labelled. competitor-directed spend = competitor_asin + competitor_keyword (the account runs conquest on BOTH the ASIN-placement rail and the keyword rail).',
         non_branded_acos_headline: 'non_branded_keyword ROAS 1.56 → ACOS ~64% is the HEADLINE for the "gap to close" framing: it is target-level and complete — what non-branded BIDDING actually costs. §8a\'s search-term non-branded ACOS is much lower (mapped 47.3%, unmapped 33.4%) because BRANDED TARGETS broad-match onto NON-BRANDED SEARCHES and those cheap conversions FLATTER the search-term view. Use §7d\'s 64% for the gap; do NOT reconcile the two by picking one — they measure bids vs searches (classifier-stability shares: targeting 44.6% branded / 46.7% non-branded vs search-term 28.5% / 64.0%).',
         window: { start: S7D_START, end: S7D_END },
         bucket_order: S7D_BUCKETS,

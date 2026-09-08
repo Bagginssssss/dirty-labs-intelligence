@@ -31,7 +31,7 @@ import {
   acos, roas, sumBy, dayKey, mondayOf,
 } from '../conventions.mjs'
 
-const START = '2026-04-18', END = '2026-08-29'
+const START = '2026-04-18', END = '2026-08-31' // Batch 4a: full August (was 08-29)
 const SPARK_FROM = '2026-07-01'         // "last 60 days" floor for the per-term sparklines
 const NB_ACOS_TARGET = 0.58             // STATED business target for non-branded — not derived
 const EXPENSIVE_SPEND = 250             // spend floor over the window
@@ -44,6 +44,7 @@ export default {
     const campaigns = await db.selectAll('campaigns', 'id,campaign_name', { filter: q => q.eq('brand_id', BRAND_ID), order: [{ column: 'campaign_name' }] })
     const asins = await db.selectAll('asins', 'asin,product_line', { filter: q => q.eq('brand_id', BRAND_ID), order: [{ column: 'asin' }] })
     const asinToCategory = new Map(asins.map(a => [String(a.asin).toUpperCase(), a.product_line]))
+    const ownAsinSet = new Set(asins.map(a => String(a.asin).toUpperCase())) // Batch 4a: own ASINs → branded
     const campClass = new Map(campaigns.map(c => [c.id, { name: c.campaign_name, ...classifyCampaignCategory(c.campaign_name, asinToCategory) }]))
 
     // chunked pull — sp_search_term_report is large; keep each query's offset shallow (see s7)
@@ -75,7 +76,7 @@ export default {
     for (const r of rows) {
       const cc = campClass.get(r.campaign_id) ?? { name: '(unknown)', tier: 4, category: null }
       const spend = Number(r.spend ?? 0)
-      const cls = classifyBrand(r.customer_search_term)
+      const cls = classifyBrand(r.customer_search_term, ownAsinSet)
       totalSpend += spend; tierRaw[cc.tier] += spend
       if (cls.class === 'non_branded') {
         nbSpend += spend; tierNb[cc.tier] += spend; tierNbSales[cc.tier] += Number(r.sales_7d ?? 0)

@@ -29,7 +29,7 @@ export default {
     })
 
     const bundles = await db.selectAll('virtual_bundle_sales_daily', 'bundle_asin,sale_date,bundles_sold,total_sales_usd', {
-      filter: q => q.eq('brand_id', BRAND_ID).gte('sale_date', '2026-01-01'), order: [{ column: 'sale_date' }],
+      filter: q => q.eq('brand_id', BRAND_ID).gte('sale_date', '2026-01-01').lte('sale_date', '2026-08-31'), order: [{ column: 'sale_date' }], // Batch 4a: cap — bundles now run into September
     })
     const monthly = {}
     for (const r of bundles) {
