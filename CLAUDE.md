@@ -110,10 +110,10 @@ app/
     analyze/route.ts     — POST AI analysis endpoint, all analysis types
     calculate-metrics/route.ts — POST derived metrics calculation
     health/route.ts      — GET health check
-supabase/migrations/     — 057 migration files (001–057)
+supabase/migrations/     — 61 migration files (001–063; 021–022 never used)
 ```
 
-## Database Tables (55 migrations)
+## Database Tables (61 migrations)
 - Reference: brands, asins, campaigns, ad_groups
 - Reports: sp_search_term_report, sp_targeting_report, sp_campaign_performance,
            business_report, purchased_product_report, scale_insights_bid_log,
