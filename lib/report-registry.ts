@@ -69,8 +69,8 @@ export const REPORT_REGISTRY_SEED: RegistryRow[] = [
   // ── Subscribe & Save ───────────────────────────────────────────────────────────
   { report_key: 'subscribe_and_save', display_name: 'S&S Performance', source_group: 'Subscribe & Save', cadence: 'monthly', pull_period: 'Latest month', target_table: 'subscribe_and_save', discriminator: null, requires_period_dates: false, is_active: true, sort_order: 1, notes: 'Overlapping rolling ~30d windows labeled at period start (INB-136 covering-period semantics).' },
   // S&S Dashboard exports (INB-144): 5 dailies (one table, discriminated on metric) + 3 snapshots (one table, discriminated on report).
-  { report_key: 'sns_dashboard_sales', display_name: 'S&S Daily — Sales (Reorder vs S&S)', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['reorder_sales', 'sns_sales'] }, requires_period_dates: false, is_active: true, sort_order: 2, notes: null },
-  { report_key: 'sns_dashboard_reorder_share', display_name: 'S&S Daily — Reorder & S&S Share', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['reorder_rate', 'sns_sales_share'] }, requires_period_dates: false, is_active: true, sort_order: 3, notes: null },
+  { report_key: 'sns_dashboard_sales', display_name: 'S&S Daily — Sales (Reorder vs S&S)', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['reorder_sales', 'sns_sales', 'buy_again_sales'] }, requires_period_dates: false, is_active: true, sort_order: 2, notes: null },
+  { report_key: 'sns_dashboard_reorder_share', display_name: 'S&S Daily — Reorder & S&S Share', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['reorder_rate', 'sns_sales_share', 'buy_again_share'] }, requires_period_dates: false, is_active: true, sort_order: 3, notes: null },
   { report_key: 'sns_dashboard_subscription_count', display_name: 'S&S Daily — Subscription Count', source_group: 'Subscribe & Save', cadence: 'weekly', pull_period: 'Last 30 days', target_table: 'sns_dashboard_daily', discriminator: { column: 'metric', values: ['active_subscriptions', 'active_subscriptions_ly'] }, requires_period_dates: false, is_active: true, sort_order: 4, notes: null },
   // INB-173 — DEPRECATED: "Coupon Sales Share" left the Seller Central dashboard (last data 2026-08-09).
   // is_active=false only — 85 coverage periods + 1,170 fact rows preserved (history stays queryable).
@@ -258,6 +258,9 @@ export function deriveReportKey(
         // are all-zero but still carry rows, so a paired upload resolves keys.size === 1 here).
         coupon_sales_sns: 'sns_dashboard_coupon_driven',      coupon_sales_reorder: 'sns_dashboard_coupon_driven',
         coupon_sales_standard: 'sns_dashboard_coupon_driven',
+        // INB-188 — Buy Again & Save, new third column in the Sales and Share exports. Each MUST route to its
+        // file's key: an unlisted slug is filtered out below, so the upload would pass with it unrouted.
+        buy_again_sales: 'sns_dashboard_sales',               buy_again_share: 'sns_dashboard_reorder_share',
       }
       const keys = new Set(distinctField(mappedRows, 'metric').map(m => SLUG_TO_KEY[m]).filter(Boolean))
       if (keys.size !== 1) return warn(`S&S Dashboard daily upload spans ${keys.size} reports [${[...keys].join(', ')}] — expected one`)

@@ -16,11 +16,21 @@ import { parseNumeric } from './types'
 //     which survives Amazon normalizing the S&S columns to byte-identical strings (the reports stay
 //     distinguishable by Reorder (CUSTOM) vs Reorder Rate (CUSTOM)).
 // Header strings below are pinned by tests/fixtures/sns-daily-*.csv, built from the real export bytes.
+//
+// INB-188 — Amazon renamed the Reorder column in BOTH files (Sales "Reorder (CUSTOM)" → "Total Reorder
+// (CUSTOM)"; Share "Reorder Rate (CUSTOM)" → "Total  Reorder (CUSTOM)", DOUBLED space) and added a Buy
+// Again & Save column to each. The Reorder column is the signature, so neither file identified → 400.
+// Sales and Share now differ ONLY by internal whitespace in every column (the word "Rate" used to
+// separate them). A whitespace-normalized file would be identified as the other report; the INB-167
+// range guard blocks that in both directions (S&S share ~0.3 vs S&S sales ~20k). The old Reorder forms
+// stay as legacySignatures so archived files still ingest (INB-167 fossil retention).
 
 export interface SnsDailyReport {
   reportKey: string
   // An exact header UNIQUE to this report — identifies which of the 5 daily files this is.
   signature: string
+  // Earlier exact forms of the signature column (INB-188). Each is also a key in `columns`.
+  legacySignatures?: string[]
   // Exact header → metric slug, for THIS report only. Several header forms may map to one slug
   // (Amazon whitespace/word variants of the same column).
   columns: Record<string, string>
@@ -29,17 +39,23 @@ export interface SnsDailyReport {
 export const SNS_DAILY_REPORTS: SnsDailyReport[] = [
   {
     reportKey: 'sns_dashboard_sales',
-    signature: 'Reorder (CUSTOM)',
+    signature: 'Total Reorder (CUSTOM)',
+    legacySignatures: ['Reorder (CUSTOM)'],
     columns: {
-      'Reorder (CUSTOM)': 'reorder_sales',
+      'Total Reorder (CUSTOM)': 'reorder_sales', // INB-188 — renamed, same metric
+      'Reorder (CUSTOM)': 'reorder_sales',       // pre-2026-10-20 form
       'Subscribe & Save (CUSTOM)': 'sns_sales', // dollars
+      'Buy Again & Save (CUSTOM)': 'buy_again_sales', // INB-188 — new, dollars; first in the 10-26 pull
     },
   },
   {
     reportKey: 'sns_dashboard_reorder_share',
-    signature: 'Reorder Rate (CUSTOM)',
+    signature: 'Total  Reorder (CUSTOM)', // DOUBLED space after Total
+    legacySignatures: ['Reorder Rate (CUSTOM)'],
     columns: {
-      'Reorder Rate (CUSTOM)': 'reorder_rate',
+      'Total  Reorder (CUSTOM)': 'reorder_rate', // INB-188 — renamed, same metric (DOUBLED space)
+      'Reorder Rate (CUSTOM)': 'reorder_rate',   // pre-2026-10-20 form
+      'Buy Again  &  Save  (CUSTOM)': 'buy_again_share', // INB-188 — new; DOUBLED around & and before (CUSTOM)
       // The S&S %-of-sales column. Amazon has shipped it three ways; ALL mean sns_sales_share UNDER
       // this report (the SAME string means sns_sales under the Sales report — per-report scoping):
       'Subscribe and Save (CUSTOM)': 'sns_sales_share', // historical (word "and"); INB-144-era, not byte-confirmed (no pre-07-27 CSV on disk) — kept per the INB-167 fossil analysis
@@ -101,7 +117,7 @@ export function snsHeaderKey(h: string): string {
 // match (ambiguous) — the route then rejects the upload rather than guessing.
 export function identifySnsDailyReport(headers: string[]): SnsDailyReport | null {
   const keys = new Set(headers.map(snsHeaderKey))
-  const matches = SNS_DAILY_REPORTS.filter(r => keys.has(r.signature))
+  const matches = SNS_DAILY_REPORTS.filter(r => [r.signature, ...(r.legacySignatures ?? [])].some(s => keys.has(s)))
   return matches.length === 1 ? matches[0] : null
 }
 
